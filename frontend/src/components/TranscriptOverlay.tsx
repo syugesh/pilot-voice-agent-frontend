@@ -585,9 +585,6 @@ function SessionsList({ token }: { token: string }) {
               onMouseLeave={e => (e.currentTarget.style.boxShadow="none")}>
               <div style={{ display:"flex", alignItems:"center", gap:"0.45rem", marginBottom:"0.45rem" }}>
                 <span style={{ fontSize:"1rem" }}>{ucIcon[s.usecase] || "📌"}</span>
-                <span style={{ fontSize:"0.72rem", fontWeight:700, color:C.text1 }}>
-                  #{s.display_id}
-                </span>
                 <span style={{ marginLeft:"auto", fontSize:"0.62rem", padding:"0.1rem 0.4rem",
                                borderRadius:4, fontWeight:600,
                                background: s.state==="ENDED" ? "#F0FFF4" : C.amberBg,
@@ -595,8 +592,9 @@ function SessionsList({ token }: { token: string }) {
                   {s.state}
                 </span>
               </div>
-              <div style={{ fontSize:"0.72rem", color:C.text2, marginBottom:"0.2rem" }}>
-                {s.usecase}
+              <div style={{ fontSize:"0.78rem", fontWeight:700, color:C.text1, marginBottom:"0.3rem",
+                             overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                {s.title || s.usecase}
               </div>
               <div style={{ fontSize:"0.65rem", color:C.text3 }}>
                 {new Date(s.created_at).toLocaleString()}
