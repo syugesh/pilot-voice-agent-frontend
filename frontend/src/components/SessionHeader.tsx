@@ -169,6 +169,8 @@ export function LandingPage() {
   if (p==="signup")  return <SignupPage/>;
   if (p==="verify")  return <OTPPage/>;
   if (p==="enroll")  return <VoiceCalibration/>;
+  if (p==="forgot")  return <ForgotPasswordPage/>;
+  if (p==="choose-role") return <ChooseRolePage/>;
 
   return (
     <div style={{ minHeight:"100vh", fontFamily:"Inter,sans-serif", background:"var(--bg)" }}>
@@ -239,8 +241,8 @@ export function LandingPage() {
           <div style={{ fontSize:"0.68rem", fontWeight:700, letterSpacing:"0.1em",
                         color:C.text3, marginBottom:"1.25rem" }}>LIVE SESSION</div>
           {[
-            { name:"Maya K.", role:"Developer", msg:"Book a flight to Delhi for tomorrow morning.", self:true },
-            { name:"PILOT AI", role:"Assistant", msg:"Found 5 flights from Chennai to Delhi. Showing results now.", self:false },
+            { name:"Maya K.", msg:"Book a flight to Delhi for tomorrow morning.", self:true },
+            { name:"PILOT AI", msg:"Found 5 flights from Chennai to Delhi. Showing results now.", self:false },
           ].map((row, i)=>(
             <div key={i} style={{ display:"flex", gap:"0.75rem", alignItems:"flex-start",
                                   marginBottom:i===0?"1.1rem":0 }}>
@@ -253,8 +255,6 @@ export function LandingPage() {
               <div>
                 <div style={{ display:"flex", gap:"0.4rem", alignItems:"center", marginBottom:"0.25rem" }}>
                   <span style={{ fontSize:"0.78rem", fontWeight:700, color:C.text1 }}>{row.name}</span>
-                  <span style={{ fontSize:"0.66rem", color:C.text3, background:"var(--amber-bg)",
-                                 padding:"0.1rem 0.45rem", borderRadius:20 }}>{row.role}</span>
                 </div>
                 <div style={{ fontSize:"0.83rem", color:C.text2, lineHeight:1.55 }}>{row.msg}</div>
               </div>
@@ -494,7 +494,8 @@ function LoginPage() {
 
         <div style={{ display:"flex",justifyContent:"space-between",marginBottom:"0.3rem" }}>
           <label style={{ fontSize:"0.8rem",fontWeight:600,color:C.text1 }}>Password</label>
-          <span style={{ fontSize:"0.78rem",color:C.amberDark,cursor:"pointer",fontWeight:500 }}>
+          <span onClick={()=>store.setPage("forgot")}
+            style={{ fontSize:"0.78rem",color:C.amberDark,cursor:"pointer",fontWeight:500 }}>
             Forgot password?
           </span>
         </div>
@@ -522,6 +523,154 @@ function LoginPage() {
                     lineHeight:1.5 }}>
           By continuing, you agree to PILOT's Terms of Service and Privacy Policy.
         </p>
+      </div>
+    </div>
+  );
+}
+
+/* ── FORGOT PASSWORD — request code, then reset ── */
+function ForgotPasswordPage() {
+  const store = useAppStore();
+  const [step, setStep]   = useState<"email"|"reset"|"done">("email");
+  const [email, setEmail] = useState("");
+  const [otp, setOtp]     = useState("");
+  const [pw, setPw]       = useState("");
+  const [pw2, setPw2]     = useState("");
+  const [err, setErr]     = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function sendCode() {
+    setErr(""); setLoading(true);
+    try {
+      await api("POST", "/auth/forgot-password", { email });
+      setStep("reset");
+    } catch (e: any) { setErr(e.message); }
+    finally { setLoading(false); }
+  }
+
+  const pwValid = pwScore(pw) === 5;
+
+  async function doReset() {
+    if (!pwValid) { setErr("Password does not meet the requirements below."); return; }
+    if (pw !== pw2) { setErr("Passwords do not match."); return; }
+    setErr(""); setLoading(true);
+    try {
+      await api("POST", "/auth/reset-password", { email, otp, new_password: pw });
+      setStep("done");
+    } catch (e: any) { setErr(e.message); }
+    finally { setLoading(false); }
+  }
+
+  return (
+    <div style={{ minHeight:"100vh", background:"var(--bg)",
+                  display:"flex", alignItems:"center", justifyContent:"center" }}>
+      <div style={{ background:"var(--white)", borderRadius:20, padding:"2.5rem", width:420,
+                    boxShadow:"0 8px 48px rgba(0,0,0,0.08)", position:"relative" }}>
+        <button onClick={()=>store.setPage("login")}
+          style={{ position:"absolute",top:"1rem",left:"1rem",background:"none",border:"none",
+                   color:C.text3,cursor:"pointer",fontSize:"0.85rem",display:"flex",
+                   alignItems:"center",gap:"0.3rem" }}>← Back</button>
+
+        <div style={{ textAlign:"center", marginBottom:"1.75rem" }}>
+          <img src="/logo.png" alt="PILOT"
+               style={{ width:56, height:56, objectFit:"contain", margin:"0 auto 1rem", display:"block" }}/>
+          <h2 style={{ fontSize:"1.6rem", fontWeight:800, color:C.text1 }}>
+            {step==="done" ? "Password reset" : "Reset your password"}
+          </h2>
+          <p style={{ color:C.text3, fontSize:"0.88rem", marginTop:"0.25rem" }}>
+            {step==="email" && "Enter your account email and we'll send a reset code."}
+            {step==="reset" && `Enter the code sent to ${email} and choose a new password.`}
+            {step==="done"  && "Your password has been updated."}
+          </p>
+        </div>
+
+        {step==="email" && (
+          <>
+            <label style={{ fontSize:"0.8rem",fontWeight:600,display:"block",marginBottom:"0.3rem",color:C.text1 }}>
+              Email address
+            </label>
+            <input style={{...inp,marginBottom:"1rem"}} type="email" value={email}
+              onChange={e=>setEmail(e.target.value)}
+              onKeyDown={e=>e.key==="Enter"&&sendCode()}
+              placeholder="name@company.com"/>
+
+            {err && <div style={{ color:C.red,fontSize:"0.78rem",marginBottom:"0.85rem",
+                                  padding:"0.5rem 0.75rem",background:"#FEF2F2",borderRadius:8,
+                                  border:"1px solid #FECACA" }}>{err}</div>}
+
+            <button onClick={sendCode} disabled={loading || !email}
+              style={{ width:"100%",padding:"0.85rem",borderRadius:10,background:C.amberDark,
+                       color:"#fff",fontWeight:700,border:"none",
+                       fontSize:"0.92rem",cursor:"pointer",
+                       opacity:(loading||!email)?0.7:1 }}>
+              {loading?"Sending…":"Send Reset Code"}
+            </button>
+          </>
+        )}
+
+        {step==="reset" && (
+          <>
+            <label style={{ fontSize:"0.8rem",fontWeight:600,display:"block",marginBottom:"0.3rem",color:C.text1 }}>
+              Reset code
+            </label>
+            <input style={{...inp,marginBottom:"0.85rem",letterSpacing:"0.3em",textAlign:"center"}}
+              value={otp} maxLength={6} inputMode="numeric"
+              onChange={e=>setOtp(e.target.value.replace(/\D/g,""))}
+              placeholder="000000"/>
+
+            <label style={{ fontSize:"0.8rem",fontWeight:600,display:"block",marginBottom:"0.3rem",color:C.text1 }}>
+              New password
+            </label>
+            <PwInput value={pw} onChange={setPw}/>
+            <div style={{ marginBottom:"0.6rem" }}><StrengthBar pw={pw}/></div>
+
+            <label style={{ fontSize:"0.8rem",fontWeight:600,display:"block",marginBottom:"0.3rem",color:C.text1 }}>
+              Confirm new password
+            </label>
+            <PwInput value={pw2} onChange={setPw2} placeholder="Repeat password"
+              onKeyDown={e=>e.key==="Enter"&&doReset()}/>
+            {pw2 && pw !== pw2 && (
+              <p style={{ fontSize:"0.75rem", color:C.red, marginTop:"0.35rem" }}>Passwords do not match.</p>
+            )}
+
+            {err && <div style={{ color:C.red,fontSize:"0.78rem",margin:"0.85rem 0",
+                                  padding:"0.5rem 0.75rem",background:"#FEF2F2",borderRadius:8,
+                                  border:"1px solid #FECACA" }}>{err}</div>}
+
+            <button onClick={doReset} disabled={loading || otp.length!==6 || !pwValid || pw!==pw2}
+              style={{ width:"100%",padding:"0.85rem",borderRadius:10,marginTop:"1rem",
+                       background:(otp.length===6 && pwValid && pw===pw2)?C.amberDark:C.border,
+                       color:(otp.length===6 && pwValid && pw===pw2)?"#fff":C.text3,
+                       fontWeight:700,border:"none",
+                       fontSize:"0.92rem",
+                       cursor:(otp.length===6 && pwValid && pw===pw2)?"pointer":"not-allowed" }}>
+              {loading?"Resetting…":"Reset Password"}
+            </button>
+
+            <p style={{ textAlign:"center",fontSize:"0.8rem",color:C.text3,marginTop:"1rem" }}>
+              Didn't get a code?{" "}
+              <span style={{ color:C.amberDark,cursor:"pointer",fontWeight:600 }}
+                onClick={sendCode}>Resend</span>
+            </p>
+          </>
+        )}
+
+        {step==="done" && (
+          <>
+            <div style={{ display:"flex", flexDirection:"column", alignItems:"center",
+                          justifyContent:"center", padding:"1rem 0 1.5rem", gap:"0.75rem" }}>
+              <div style={{ width:60, height:60, borderRadius:"50%", background:"#DCFCE7",
+                            display:"flex", alignItems:"center", justifyContent:"center",
+                            fontSize:"1.6rem", color:C.green }}>✓</div>
+            </div>
+            <button onClick={()=>store.setPage("login")}
+              style={{ width:"100%",padding:"0.85rem",borderRadius:10,background:C.amberDark,
+                       color:"#fff",fontWeight:700,border:"none",
+                       fontSize:"0.92rem",cursor:"pointer" }}>
+              Back to Sign In
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -1020,6 +1169,81 @@ function OTPPage() {
   );
 }
 
+/* ── CHOOSE ROLE — one-time step for first-time SSO signups (no signup form to pick one) ── */
+function ChooseRolePage() {
+  const store = useAppStore();
+  const [role, setRole] = useState("developer");
+  const [err, setErr]   = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function submit() {
+    setErr(""); setLoading(true);
+    try {
+      const r = await api("PATCH", "/auth/role", { role });
+      store.setUser(r.user, r.access_token);
+      store.setPage(store.voiceEnrolled ? "dashboard" : "enroll");
+    } catch (e: any) { setErr(e.message); }
+    finally { setLoading(false); }
+  }
+
+  return (
+    <div style={{ minHeight:"100vh", background:"var(--bg)",
+                  display:"flex", alignItems:"center", justifyContent:"center" }}>
+      <div style={{ background:"var(--white)", borderRadius:20, padding:"2.5rem", width:420,
+                    boxShadow:"0 8px 48px rgba(0,0,0,0.08)" }}>
+        <div style={{ textAlign:"center", marginBottom:"1.75rem" }}>
+          <img src="/logo.png" alt="PILOT"
+               style={{ width:56, height:56, objectFit:"contain", margin:"0 auto 1rem", display:"block" }}/>
+          <h2 style={{ fontSize:"1.6rem", fontWeight:800, color:C.text1 }}>Welcome to PILOT</h2>
+          <p style={{ color:C.text3, fontSize:"0.88rem", marginTop:"0.25rem" }}>
+            One last thing — what's your role?
+          </p>
+        </div>
+
+        <label style={{ fontSize:"0.8rem",fontWeight:600,display:"block",marginBottom:"0.3rem",color:C.text1 }}>
+          Role
+        </label>
+        <select style={{...inp,marginBottom:"1rem"}} value={role} onChange={e=>setRole(e.target.value)}>
+          <option value="developer">Developer</option>
+          <option value="manager">Manager</option>
+          <option value="csr">Customer Service Rep</option>
+          <option value="operator">Operator</option>
+          <option value="admin">Admin</option>
+        </select>
+
+        {err && <div style={{ color:C.red,fontSize:"0.78rem",marginBottom:"0.85rem",
+                              padding:"0.5rem 0.75rem",background:"#FEF2F2",borderRadius:8,
+                              border:"1px solid #FECACA" }}>{err}</div>}
+
+        <button onClick={submit} disabled={loading}
+          style={{ width:"100%",padding:"0.85rem",borderRadius:10,background:C.amberDark,
+                   color:"#fff",fontWeight:700,border:"none",
+                   fontSize:"0.92rem",cursor:"pointer",
+                   opacity:loading?0.7:1 }}>
+          {loading?"Saving…":"Continue →"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Each round reads a different pair of sentences — repeating the same lines
+// 3 times in a row felt monotonous and gave less varied voice data anyway.
+const CALIBRATION_PASSAGES: [string, string][] = [
+  [
+    "I am securely enrolling my voice into the PILOT system.",
+    "This unique vocal signature will verify my identity.",
+  ],
+  [
+    "I authorize PILOT to act on my commands and confirm that I am the registered user of this system.",
+    "My voice is my secure and unique identity key.",
+  ],
+  [
+    "PILOT uses voice biometrics to authenticate me during every session.",
+    "No one else can access my account by imitating my voice.",
+  ],
+];
+
 /* ── VOICE CALIBRATION — 3 rounds, all chunks accumulated ── */
 function VoiceCalibration() {
   const store = useAppStore();
@@ -1168,14 +1392,12 @@ function VoiceCalibration() {
           <div style={{ background:"#F9F8F6",border:`1.5px solid ${C.border}`,borderRadius:10,
                         padding:"0.9rem 1rem",fontSize:"0.95rem",fontWeight:500,lineHeight:1.65,
                         color:C.text1,marginBottom:"0.5rem" }}>
-            "I am securely enrolling my voice into the PILOT system.
-            This unique vocal signature will verify my identity."
+            "{CALIBRATION_PASSAGES[round - 1][0]}"
           </div>
           <div style={{ background:"#F9F8F6",border:`1.5px solid ${C.border}`,borderRadius:10,
                         padding:"0.9rem 1rem",fontSize:"0.95rem",fontWeight:500,lineHeight:1.65,
                         color:C.text1 }}>
-            "I authorize PILOT to act on my commands and confirm
-            that I am the registered user of this system."
+            "{CALIBRATION_PASSAGES[round - 1][1]}"
           </div>
         </div>
 

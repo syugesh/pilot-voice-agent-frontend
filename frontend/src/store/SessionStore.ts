@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type AppPage = "landing"|"login"|"signup"|"verify"|"enroll"|"dashboard"|"ppt"|"care"|"profile"|"settings"|"guidelines";
+export type AppPage = "landing"|"login"|"signup"|"verify"|"enroll"|"dashboard"|"ppt"|"care"|"profile"|"settings"|"guidelines"|"forgot"|"choose-role";
 
 export interface TranscriptEntry {
   text:string; speaker:string|null; role:string|null; confidence:number; timestamp:number;

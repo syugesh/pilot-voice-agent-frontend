@@ -93,6 +93,10 @@ function Sidebar({ active }: { active: string }) {
   );
 }
 
+function speakerName(speaker: string | null | undefined, fallback: string): string {
+  return (!speaker || speaker === "You") ? fallback : speaker;
+}
+
 /* ── Waveform bars ── */
 function WaveBars({ active, level, count=8, color=C.amber }:
   { active:boolean; level:number; count?:number; color?:string }) {
@@ -113,6 +117,7 @@ function LiveTranscriptBar({ transcripts, agentStatus, isListening, wakeActive, 
   { transcripts: any[]; agentStatus: string; isListening: boolean;
     wakeActive: boolean; level: number; onToggle: ()=>void }) {
   const last = transcripts[transcripts.length-1];
+  const userName = useAppStore(s => s.user?.name ?? "You");
   return (
     <div style={{ position:"absolute", bottom:0, left:0, right:0,
                   background:C.surface,
@@ -137,7 +142,7 @@ function LiveTranscriptBar({ transcripts, agentStatus, isListening, wakeActive, 
             <span style={{ fontSize:"0.7rem", fontWeight:700,
                            color: last.role==="PILOT" ? C.amber : C.amberDark,
                            marginRight:"0.4rem" }}>
-              {last.speaker || "You"}:
+              {speakerName(last.speaker, userName)}:
             </span>
             <span style={{ fontSize:"0.88rem", color:C.text1 }}>{last.text}</span>
           </div>
@@ -344,8 +349,6 @@ function useSession() {
         tool_start: (p:any) => {
           store.upsertToolCard({...p, status:"running"});
           setAgentStatus(`Running ${p.tool}...`);
-          addT({ text:`⚙ Starting: ${p.tool}`, speaker:"PILOT", role:"PILOT",
-                 confidence:1, timestamp:Date.now()/1000 });
         },
         tool_end: (p:any) => {
           store.upsertToolCard({...p, status:p.result?.status||"ok"});
@@ -356,10 +359,10 @@ function useSession() {
               speaker:"PILOT", role:"PILOT", confidence:1, timestamp:Date.now()/1000,
               flights: r.flights, origin: r.origin, destination: r.destination, date: r.date,
             });
-          } else {
-            let msg = `✓ ${p.tool} complete`;
-            if (r?.ticket_ref)  msg = `✓ Ticket created: ${r.ticket_ref}`;
-            if (r?.booking_ref) msg = `✓ Flight booked: ${r.booking_ref}`;
+          } else if (r?.ticket_ref || r?.booking_ref) {
+            const msg = r?.ticket_ref
+              ? `✓ Ticket created: ${r.ticket_ref}`
+              : `✓ Flight booked: ${r.booking_ref}`;
             addT({text:msg, speaker:"PILOT", role:"PILOT", confidence:1, timestamp:Date.now()/1000});
           }
         },
@@ -421,6 +424,8 @@ function SessionHistoryModal({ sessionId, onClose, token }:
   { sessionId: string; onClose: ()=>void; token: string }) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [showRaw, setShowRaw] = useState(false);
+  const userName = useAppStore(s => s.user?.name ?? "You");
 
   useEffect(() => {
     fetch(`/api/v1/sessions/${sessionId}/history`, {
@@ -497,31 +502,49 @@ function SessionHistoryModal({ sessionId, onClose, token }:
               </div>
             )}
 
-            {/* Transcript */}
-            <div style={{ fontSize:"0.7rem", fontWeight:700, letterSpacing:"0.08em",
-                          color:C.text3, marginBottom:"0.5rem" }}>TRANSCRIPT</div>
-            {data?.transcripts?.length === 0 && (
-              <div style={{ color:C.text3, fontSize:"0.82rem" }}>No transcript recorded.</div>
-            )}
-            {(data?.transcripts || []).map((t: any, i: number) => {
-              const isPilot = t.speaker === "PILOT" || t.role === "assistant";
-              return (
-                <div key={i} style={{ display:"flex", gap:"0.5rem", marginBottom:"0.55rem",
-                                       justifyContent: isPilot ? "flex-start" : "flex-end" }}>
-                  <div style={{ maxWidth:"80%", padding:"0.5rem 0.75rem", borderRadius:10,
-                                background: isPilot ? C.amberBg : "#F0F4FF",
-                                fontSize:"0.82rem", lineHeight:1.5,
-                                color: isPilot ? C.amberDark : C.text1,
-                                border: `1px solid ${isPilot ? C.amber : "#C7D7FF"}` }}>
-                    <div style={{ fontSize:"0.62rem", fontWeight:700, marginBottom:"0.15rem",
-                                  color: isPilot ? C.amberDark : C.blue }}>
-                      {t.speaker || "You"}
+            {/* Summary — business-value view, shown by default */}
+            <div style={{ marginBottom:"1rem" }}>
+              <div style={{ fontSize:"0.7rem", fontWeight:700, letterSpacing:"0.08em",
+                            color:C.text3, marginBottom:"0.5rem" }}>SUMMARY</div>
+              <div style={{ background:"var(--bg2)", borderRadius:10, padding:"0.75rem 0.9rem",
+                            fontSize:"0.85rem", lineHeight:1.6, color:C.text1 }}>
+                {data?.summary || "No summary available."}
+              </div>
+            </div>
+
+            <button onClick={() => setShowRaw(v => !v)}
+              style={{ background:"none", border:"none", cursor:"pointer",
+                       color:C.amberDark, fontWeight:600, fontSize:"0.78rem",
+                       padding:0, marginBottom: showRaw ? "0.75rem" : 0 }}>
+              {showRaw ? "▾ Hide full transcript" : "▸ View full transcript"}
+            </button>
+
+            {showRaw && (
+              <>
+                {data?.transcripts?.length === 0 && (
+                  <div style={{ color:C.text3, fontSize:"0.82rem" }}>No transcript recorded.</div>
+                )}
+                {(data?.transcripts || []).map((t: any, i: number) => {
+                  const isPilot = t.speaker === "PILOT" || t.role === "assistant";
+                  return (
+                    <div key={i} style={{ display:"flex", gap:"0.5rem", marginBottom:"0.55rem",
+                                           justifyContent: isPilot ? "flex-start" : "flex-end" }}>
+                      <div style={{ maxWidth:"80%", padding:"0.5rem 0.75rem", borderRadius:10,
+                                    background: isPilot ? C.amberBg : "#F0F4FF",
+                                    fontSize:"0.82rem", lineHeight:1.5,
+                                    color: isPilot ? C.amberDark : C.text1,
+                                    border: `1px solid ${isPilot ? C.amber : "#C7D7FF"}` }}>
+                        <div style={{ fontSize:"0.62rem", fontWeight:700, marginBottom:"0.15rem",
+                                      color: isPilot ? C.amberDark : C.blue }}>
+                          {speakerName(t.speaker, userName)}
+                        </div>
+                        {t.text}
+                      </div>
                     </div>
-                    {t.text}
-                  </div>
-                </div>
-              );
-            })}
+                  );
+                })}
+              </>
+            )}
           </div>
         )}
       </div>
@@ -645,7 +668,7 @@ function MainDashboard() {
                     <div style={{ fontSize:"0.68rem", fontWeight:700,
                                   color: t.speaker==="PILOT" ? C.amber : C.amberDark,
                                   marginBottom:"0.1rem" }}>
-                      {t.speaker||"You"}
+                      {speakerName(t.speaker, store.user?.name ?? "You")}
                     </div>
                     <div style={{ background: t.speaker==="PILOT" ? C.amberBg : "var(--bg2)",
                                   borderRadius:8, padding:"0.4rem 0.6rem",
@@ -1049,7 +1072,7 @@ function CustomerCareView() {
                     <div style={{ width:28,height:28,borderRadius:"50%",background:C.amberDark,
                                   display:"flex",alignItems:"center",justifyContent:"center",
                                   marginLeft:"0.4rem",flexShrink:0,color:"#fff",fontSize:"0.68rem",fontWeight:700 }}>
-                      {(t.speaker||"U").charAt(0).toUpperCase()}
+                      {speakerName(t.speaker, store.user?.name ?? "U").charAt(0).toUpperCase()}
                     </div>
                   )}
                 </div>
