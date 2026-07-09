@@ -4,7 +4,7 @@ import { LandingPage } from "./components/SessionHeader";
 import { Dashboard }   from "./components/TranscriptOverlay";
 import "./global.css";
 
-const DASH_PAGES = ["dashboard","ppt","care","profile","settings","guidelines"];
+const DASH_PAGES = ["dashboard","ppt","care","profile","settings","guidelines","about"];
 
 // Module-level (not React state) so it survives React.StrictMode's double-invoke
 // of effects in dev — this init logic reads + destructively clears URL params and

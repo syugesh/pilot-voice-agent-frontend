@@ -16,7 +16,210 @@ function useThemeColors() {
 }
 
 interface SlideShape { text:string; color:string; size:number; bold:boolean; left?:number; top?:number; width?:number; align?:string; }
-interface Slide { index:number; title:string; notes:string; bg_color?:string; shapes?:SlideShape[]; image_url?:string; }
+interface Slide { index:number; title:string; notes:string; bg_color?:string; shapes?:SlideShape[]; image_url?:string; kind?:string|null; }
+
+function looksDecorativeTitle(text = "", width = 90): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return true;
+  if (/\b(?:https?:\/\/|www\.|[\w.-]+\.(?:com|org|net|io|ai|co|in))\b/i.test(trimmed)) return true;
+  if (/^\d{1,2}(?:\s*\/\s*\d{1,2})?$/.test(trimmed)) return true;
+  if (/^\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}$/.test(trimmed)) return true;
+  if (/^[A-Za-z]{3,9}\s+\d{4}$/.test(trimmed)) return true; // "July 2026" — month name + year, no day
+  return width < 8;
+}
+
+function inferSlideTitle(slide?: Slide, fallback = "Slide"): string {
+  if (!slide) return fallback;
+  // Slides from the GD template have their title resolved server-side by
+  // the exact shape the generator wrote it into (see api/ppt.py's
+  // _extract_sync) — trust it outright rather than re-guessing locally,
+  // since the local heuristic below only has the (deliberately truncated)
+  // shapes list to work from and can't be as precise.
+  if (slide.kind && slide.title) return slide.title;
+  if (!looksDecorativeTitle(slide.title)) return slide.title;
+  const candidates = (slide.shapes || [])
+    .filter(sh => !looksDecorativeTitle(sh.text, sh.width ?? 90) && !/^\d+\.\s{1,3}/.test(sh.text.trim()))
+    .map(sh => ({
+      text: sh.text.trim().split("\n")[0],
+      score: (sh.size || 0) + (sh.bold ? 12 : 0) + ((sh.top ?? 50) < 75 ? 8 : 0) + (sh.text.length <= 55 ? 6 : 0),
+    }))
+    .filter(c => c.text);
+  return candidates.length ? candidates.sort((a, b) => b.score - a.score)[0].text : fallback;
+}
+
+// ── Kind-aware edit form ──────────────────────────────────────────────────
+// Slides generated from the GD template (team, table, comparison, ...) have
+// a declarative field schema (see KIND_FIELD_SCHEMA in
+// services/ppt_template_builder.py) instead of the old flat title/bullets
+// model. Rather than one bespoke form layout per kind, this renders any
+// schema generically from ~6 field types, composed recursively — a new kind
+// added on the backend needs zero frontend changes.
+interface KindField {
+  key: string; type: string; label?: string;
+  fields?: KindField[]; item_fields?: KindField[];
+  max_length?: number; fixed_length?: number; max_cols?: number; textarea?: boolean;
+}
+
+function kindInputStyle(C: any) {
+  return { width:"100%", boxSizing:"border-box" as const, padding:"0.5rem 0.65rem", borderRadius:6,
+           border:`1.5px solid ${C.border}`, background:C.bg, color:C.text1, fontSize:"0.82rem",
+           outline:"none", fontFamily:"inherit" };
+}
+function kindAddBtnStyle(C: any) {
+  return { fontSize:"0.76rem", color:C.amber, background:"none", border:"none", cursor:"pointer", padding:"0.3rem 0" };
+}
+function kindRemoveBtnStyle(C: any) {
+  return { width:22, height:22, borderRadius:"50%", border:"none", background:"rgba(239,68,68,0.15)",
+           color:"#EF4444", cursor:"pointer", fontSize:"0.7rem", flexShrink:0,
+           display:"flex", alignItems:"center", justifyContent:"center" };
+}
+
+function blankKindValue(field: KindField): any {
+  if (field.type === "list_of_strings") return [];
+  if (field.type === "list_of_objects") return [];
+  if (field.type === "object") {
+    const o: any = {};
+    (field.fields || []).forEach(f => { o[f.key] = blankKindValue(f); });
+    return o;
+  }
+  return "";
+}
+
+function KindFieldEditor({ field, value, onChange, C }: { field: KindField; value: any; onChange: (v: any) => void; C: any }) {
+  const inputStyle = kindInputStyle(C);
+
+  if (field.type === "text") {
+    return <input value={value ?? ""} onChange={e => onChange(e.target.value)}
+      placeholder={field.label} style={{ ...inputStyle, marginBottom:"0.9rem" }} />;
+  }
+
+  if (field.type === "textarea") {
+    return <textarea value={value ?? ""} rows={3} onChange={e => onChange(e.target.value)}
+      placeholder={field.label} style={{ ...inputStyle, resize:"vertical", marginBottom:"0.9rem" }} />;
+  }
+
+  if (field.type === "object") {
+    const obj = value || {};
+    return (
+      <div style={{ border:`1px solid ${C.border}`, borderRadius:8, padding:"0.7rem", marginBottom:"0.9rem" }}>
+        {(field.fields || []).map(sub => (
+          <div key={sub.key} style={{ marginBottom:"0.3rem" }}>
+            <label style={{ fontSize:"0.7rem", color:C.text3, display:"block", marginBottom:"0.2rem" }}>{sub.label}</label>
+            <KindFieldEditor field={sub} value={obj[sub.key]} onChange={v => onChange({ ...obj, [sub.key]: v })} C={C} />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (field.type === "list_of_strings") {
+    const items: string[] = value || [];
+    const canRemove = !field.fixed_length;
+    const canAdd = !field.fixed_length && (!field.max_length || items.length < field.max_length);
+    return (
+      <div style={{ marginBottom:"0.9rem" }}>
+        {items.map((item, i) => (
+          <div key={i} style={{ display:"flex", gap:"0.4rem", marginBottom:"0.4rem", alignItems:"flex-start" }}>
+            {field.textarea ? (
+              <textarea value={item} rows={2}
+                onChange={e => { const next = [...items]; next[i] = e.target.value; onChange(next); }}
+                style={{ ...inputStyle, resize:"vertical" }} />
+            ) : (
+              <input value={item}
+                onChange={e => { const next = [...items]; next[i] = e.target.value; onChange(next); }}
+                style={inputStyle} />
+            )}
+            {canRemove && (
+              <button onClick={() => onChange(items.filter((_, j) => j !== i))} style={{ ...kindRemoveBtnStyle(C), marginTop:2 }}>✕</button>
+            )}
+          </div>
+        ))}
+        {canAdd && <button onClick={() => onChange([...items, ""])} style={kindAddBtnStyle(C)}>+ Add {field.label || "item"}</button>}
+      </div>
+    );
+  }
+
+  if (field.type === "list_of_objects") {
+    const items: any[] = value || [];
+    const canRemove = !field.fixed_length;
+    const canAdd = !field.fixed_length && (!field.max_length || items.length < field.max_length);
+    return (
+      <div style={{ marginBottom:"0.9rem" }}>
+        {items.map((item, i) => (
+          <div key={i} style={{ border:`1px solid ${C.border}`, borderRadius:8, padding:"0.6rem",
+                                marginBottom:"0.5rem", position:"relative" }}>
+            {canRemove && (
+              <button onClick={() => onChange(items.filter((_, j) => j !== i))}
+                style={{ ...kindRemoveBtnStyle(C), position:"absolute", top:6, right:6 }}>✕</button>
+            )}
+            {(field.item_fields || []).map(sub => (
+              <div key={sub.key} style={{ marginBottom:"0.35rem", paddingRight: canRemove ? "1.8rem" : 0 }}>
+                <label style={{ fontSize:"0.68rem", color:C.text3, display:"block", marginBottom:"0.15rem" }}>{sub.label}</label>
+                <KindFieldEditor field={sub} value={item[sub.key]}
+                  onChange={v => { const next = [...items]; next[i] = { ...item, [sub.key]: v }; onChange(next); }} C={C} />
+              </div>
+            ))}
+          </div>
+        ))}
+        {canAdd && (
+          <button onClick={() => {
+            const blank: any = {};
+            (field.item_fields || []).forEach(f => { blank[f.key] = blankKindValue(f); });
+            onChange([...items, blank]);
+          }} style={kindAddBtnStyle(C)}>+ Add {field.label || "item"}</button>
+        )}
+      </div>
+    );
+  }
+
+  if (field.type === "table_grid") {
+    const table = value || { headers: [], rows: [] };
+    const headers: string[] = table.headers || [];
+    const rows: string[][] = table.rows || [];
+    const nCols = field.max_cols || headers.length;
+    const setHeader = (c: number, v: string) => { const h = [...headers]; h[c] = v; onChange({ ...table, headers: h }); };
+    const setCell = (r: number, c: number, v: string) => {
+      const rr = rows.map(row => [...row]); rr[r][c] = v; onChange({ ...table, rows: rr });
+    };
+    return (
+      <div style={{ marginBottom:"0.9rem", overflowX:"auto" }}>
+        <table style={{ width:"100%", borderCollapse:"collapse", fontSize:"0.78rem" }}>
+          <thead>
+            <tr>
+              {headers.map((h, c) => (
+                <th key={c} style={{ padding:"0.2rem" }}>
+                  <input value={h} onChange={e => setHeader(c, e.target.value)}
+                    style={{ ...inputStyle, padding:"0.3rem 0.4rem", fontWeight:700 }} />
+                </th>
+              ))}
+              <th style={{ width:26 }} />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, r) => (
+              <tr key={r}>
+                {row.map((cell, c) => (
+                  <td key={c} style={{ padding:"0.2rem" }}>
+                    <input value={cell} onChange={e => setCell(r, c, e.target.value)}
+                      style={{ ...inputStyle, padding:"0.3rem 0.4rem" }} />
+                  </td>
+                ))}
+                <td>
+                  <button onClick={() => onChange({ ...table, rows: rows.filter((_, i) => i !== r) })}
+                    style={kindRemoveBtnStyle(C)}>✕</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <button onClick={() => onChange({ ...table, rows: [...rows, Array(nCols).fill("")] })}
+          style={kindAddBtnStyle(C)}>+ Add Row</button>
+      </div>
+    );
+  }
+
+  return null;
+}
 
 // Stable per-tab id for uploads made before a live voice session exists —
 // avoids every such upload colliding into one shared "default" backend slot.
@@ -29,7 +232,7 @@ function getAnonPptSid(): string {
   return s;
 }
 
-export function PPTCopilotView({ sessionId, isListening, agentStatus, onToggleMic }:
+export function PPTCopilotView({ sessionId, isListening, agentStatus }:
   { sessionId:string|null; isListening:boolean; agentStatus:string; onToggleMic:()=>void }) {
   const store  = useAppStore();
   const C      = useThemeColors();
@@ -61,23 +264,6 @@ export function PPTCopilotView({ sessionId, isListening, agentStatus, onToggleMi
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [slides.length]);
-
-  // Listen for ppt_command events (navigation + voice-triggered delete)
-  useEffect(() => {
-    const handler = (e: CustomEvent) => {
-      const { action, index } = e.detail;
-      if (action === "goto" && index !== undefined) {
-        setCurrent(Math.max(0, Math.min(index, Math.max(slides.length-1, 0))));
-        setAgentLog(l => [...l.slice(-9), `Navigated to slide ${index+1}`]);
-      } else if (action === "next")   setCurrent(c => Math.min(c+1, Math.max(slides.length-1, 0)));
-      else if (action === "prev")     setCurrent(c => Math.max(c-1, 0));
-      else if (action === "first")    setCurrent(0);
-      else if (action === "last")     setCurrent(Math.max(slides.length-1, 0));
-      else if (action === "delete")   setDeleteModal("confirm");  // policy already confirmed admin
-    };
-    window.addEventListener("ppt_command" as any, handler);
-    return () => window.removeEventListener("ppt_command" as any, handler);
   }, [slides.length]);
 
   // Show "Access Denied" modal when policy blocks ppt_delete_slide for non-admins
@@ -171,6 +357,119 @@ export function PPTCopilotView({ sessionId, isListening, agentStatus, onToggleMi
   const [micListening,  setMicListening]  = useState(false);
   const recognitionRef  = useRef<any>(null);
 
+  // ── Add slide state ─────────────────────────────────────────────────────
+  const [addSlideModal, setAddSlideModal] = useState(false);
+  const [addSlideDesc,  setAddSlideDesc]  = useState("");
+  const [addingSlide,   setAddingSlide]   = useState(false);
+  const [addSlideError, setAddSlideError] = useState("");
+
+  // ── Edit slide state ──────────────────────────────────────────────────
+  const [editOpen,      setEditOpen]      = useState(false);
+  const [savingEdit,    setSavingEdit]    = useState(false);
+  const [editDraft,     setEditDraft]     = useState<{
+    title: string;
+    bullets: string[];
+  }>({ title: "", bullets: [] });
+  const [notesDraft,    setNotesDraft]    = useState("");
+  // Present only for slides generated from the GD template (a known "kind");
+  // absent (null) for uploaded/legacy slides, which use editDraft above
+  // exactly as before this feature existed.
+  const [kindSchema,    setKindSchema]    = useState<{ kind:string; fields:KindField[] } | null>(null);
+  const [kindDraft,     setKindDraft]     = useState<any>(null);
+
+  // Listen for ppt_command events (navigation + voice-triggered delete + refresh)
+  useEffect(() => {
+    const handler = (e: CustomEvent) => {
+      const { action, index, session_id } = e.detail;
+      if (action === "goto" && index !== undefined) {
+        setCurrent(Math.max(0, Math.min(index, Math.max(slides.length-1, 0))));
+        setAgentLog(l => [...l.slice(-9), `Navigated to slide ${index+1}`]);
+      } else if (action === "next")   setCurrent(c => Math.min(c+1, Math.max(slides.length-1, 0)));
+      else if (action === "prev")     setCurrent(c => Math.max(c-1, 0));
+      else if (action === "first")    setCurrent(0);
+      else if (action === "last")     setCurrent(Math.max(slides.length-1, 0));
+      else if (action === "delete")   setDeleteModal("confirm");
+      else if (action === "refresh") {
+        const sid = session_id || generatedSid || sessionId || getAnonPptSid();
+        fetch(`/api/v1/ppt/slides/${sid}`, { headers: { Authorization: `Bearer ${token}` } })
+          .then(r => r.json())
+          .then(res => {
+            if (res.slides) {
+              setSlides(res.slides);
+              store.setPptSlides(res.slides);
+            }
+            setAgentLog(l => [...l.slice(-9), "Slide updated by agent."]);
+          }).catch(console.error);
+      }
+    };
+    window.addEventListener("ppt_command" as any, handler);
+    return () => window.removeEventListener("ppt_command" as any, handler);
+  }, [slides.length, generatedSid, sessionId, token]);
+
+  async function openEditModal() {
+    const slide = slides[current];
+    if (!slide) return;
+    setNotesDraft(slide.notes || "");
+    const sid = sessionId || getAnonPptSid();
+
+    // Slides generated from the GD template carry a known "kind" — fetch
+    // its field schema + current values and render the generic kind-aware
+    // form. Uploaded/legacy slides (or a failed lookup) fall through to
+    // the original title/bullets form, unchanged.
+    try {
+      const res = await fetch(`/api/v1/ppt/slide/${sid}/${current}/schema`, {
+        headers: { Authorization: `Bearer ${token}` },
+      }).then(r => r.json());
+      if (res.kind) {
+        setKindSchema({ kind: res.kind, fields: res.fields || [] });
+        setKindDraft(res.data || {});
+        setEditOpen(true);
+        return;
+      }
+    } catch { /* fall through to the generic form below */ }
+
+    setKindSchema(null);
+    // Parse bullets from shapes: lines starting with "1.  ", "2.  " etc.
+    const rawBullets: string[] = [];
+    (slide.shapes || []).forEach(sh => {
+      sh.text.split("\n").forEach(line => {
+        const m = line.match(/^\d+\.\s{1,3}(.+)/);
+        if (m) rawBullets.push(m[1].trim());
+      });
+    });
+    setEditDraft({
+      title:   inferSlideTitle(slide, `Slide ${current + 1}`),
+      bullets: rawBullets.length > 0 ? rawBullets : [""],
+    });
+    setEditOpen(true);
+  }
+
+  async function saveEditSlide() {
+    const sid = sessionId || getAnonPptSid();
+    setSavingEdit(true);
+    try {
+      const url = kindSchema ? "/api/v1/ppt/slide/kind" : "/api/v1/ppt/slide";
+      const body = kindSchema
+        ? { session_id: sid, slide_index: current, kind: kindSchema.kind, data: kindDraft, notes: notesDraft }
+        : { session_id: sid, slide_index: current, title: editDraft.title,
+            bullets: editDraft.bullets.filter(b => b.trim() !== ""), notes: notesDraft };
+      const res = await fetch(url, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      }).then(r => { if (!r.ok) throw new Error(r.statusText); return r.json(); });
+      const sl: Slide[] = res.slides || [];
+      setSlides(sl);
+      store.setPptSlides(sl);
+      setEditOpen(false);
+      setAgentLog(l => [...l, `✓ Saved edits to slide ${current + 1}`]);
+    } catch (e: any) {
+      setAgentLog(l => [...l, `✗ Edit save failed: ${e.message}`]);
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
   function handleDeleteSlide() {
     if (slides.length === 0) return;
     const role = (store.user?.role || "").toLowerCase();
@@ -251,7 +550,32 @@ export function PPTCopilotView({ sessionId, isListening, agentStatus, onToggleMi
     setGenDesc("");
   }, [genDesc, genCount, sessionId, token]);
 
-  const slideTitle = slides[current]?.title || `Slide ${current+1}`;
+  // ── Add slide to the loaded presentation ────────────────────────────────
+  const addSlide = useCallback(async () => {
+    const sid = generatedSid || sessionId || getAnonPptSid();
+    setAddingSlide(true);
+    setAddSlideError("");
+    try {
+      const res = await fetch("/api/v1/ppt/slide/add-generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ session_id: sid, instruction: addSlideDesc.trim(), insert_after: current }),
+      }).then(r => { if (!r.ok) throw new Error(r.statusText); return r.json(); });
+
+      const sl: Slide[] = res.slides || [];
+      setSlides(sl);
+      store.setPptSlides(sl);
+      setCurrent(Math.min(current + 1, Math.max(sl.length - 1, 0)));
+      setAddSlideModal(false);
+      setAddSlideDesc("");
+      setAgentLog(l => [...l.slice(-9), `✓ Added slide — ${res.title || "New Slide"}`]);
+    } catch (e: any) {
+      setAddSlideError(`Failed: ${e.message}`);
+    }
+    setAddingSlide(false);
+  }, [addSlideDesc, current, generatedSid, sessionId, token]);
+
+  const slideTitle = inferSlideTitle(slides[current], `Slide ${current+1}`);
   const slideNotes = slides[current]?.notes || "";
 
   return (
@@ -285,6 +609,16 @@ export function PPTCopilotView({ sessionId, isListening, agentStatus, onToggleMi
                    fontWeight:600, fontSize:"0.8rem", cursor:"pointer" }}>
           Create PPT
         </button>
+
+        {/* Add Slide button — only meaningful once a deck is loaded */}
+        {slides.length > 0 && (
+          <button onClick={() => { setAddSlideModal(true); setAddSlideError(""); }}
+            style={{ padding:"0.45rem 1rem", borderRadius:8, background:C.amberBg,
+                     border:`1.5px solid ${C.amber}`, color:C.amberDark,
+                     fontWeight:600, fontSize:"0.8rem", cursor:"pointer" }}>
+            + Add Slide
+          </button>
+        )}
 
         {/* History button */}
         <div style={{ position:"relative" }}>
@@ -342,16 +676,30 @@ export function PPTCopilotView({ sessionId, isListening, agentStatus, onToggleMi
           )}
         </div>
 
-        {/* Download button — only after generation */}
-        {generatedSid && (
-          <a href={`/api/v1/ppt/download/${generatedSid}`}
-            download
-            style={{ padding:"0.45rem 1rem", borderRadius:8, textDecoration:"none",
-                     background:"rgba(34,197,94,0.1)", border:"1.5px solid rgba(34,197,94,0.4)",
-                     color:"#22C55E", fontWeight:600, fontSize:"0.8rem", cursor:"pointer" }}>
-            ⬇ Download
-          </a>
-        )}
+        {/* Export PDF / Download PPTX buttons — visible whenever slides are loaded */}
+        {slides.length > 0 && (() => {
+          const sid = generatedSid || sessionId || getAnonPptSid();
+          return (
+            <>
+              <a href={`/api/v1/ppt/export-pdf/${sid}`}
+                download
+                style={{ padding:"0.45rem 1rem", borderRadius:8, textDecoration:"none",
+                         background:"rgba(34,197,94,0.1)", border:"1.5px solid rgba(34,197,94,0.4)",
+                         color:"#22C55E", fontWeight:600, fontSize:"0.8rem", cursor:"pointer",
+                         display:"flex", alignItems:"center", gap:"0.3rem" }}>
+                ⬇ Export PDF
+              </a>
+              <a href={`/api/v1/ppt/download/${sid}`}
+                download
+                style={{ padding:"0.45rem 1rem", borderRadius:8, textDecoration:"none",
+                         background:C.amberBg, border:`1.5px solid ${C.amber}`,
+                         color:C.amberDark, fontWeight:600, fontSize:"0.8rem", cursor:"pointer",
+                         display:"flex", alignItems:"center", gap:"0.3rem" }}>
+                ⬇ Download PPTX
+              </a>
+            </>
+          );
+        })()}
 
         {/* Remove button — only shown when slides are loaded */}
         {slides.length > 0 && (
@@ -380,13 +728,15 @@ export function PPTCopilotView({ sessionId, isListening, agentStatus, onToggleMi
         </div>
       </div>
 
-      <div style={{ display:"flex", flex:1, overflow:"hidden" }}>
+      {/* paddingBottom reserves clearance for the fixed LiveTranscriptBar (~4.35rem tall)
+          overlaid by the parent PPTPageView, matching MainDashboard's 6rem convention. */}
+      <div style={{ display:"flex", flex:1, overflow:"hidden", boxSizing:"border-box", paddingBottom:"6rem" }}>
         {/* Main slide area */}
-        <div style={{ flex:1, display:"flex", flexDirection:"column" }}>
+        <div style={{ flex:1, display:"flex", flexDirection:"column", minHeight:0 }}>
           {/* Slide canvas */}
-          <div style={{ flex:1, background:"#1A1A1A", display:"flex",
+          <div style={{ flex:1, background:C.bg, display:"flex",
                         alignItems:"center", justifyContent:"center",
-                        position:"relative", overflow:"hidden" }}>
+                        position:"relative", overflow:"hidden", minHeight:0 }}>
             {slides.length === 0 ? (
               /* Drop zone */
               <div onDragOver={e=>e.preventDefault()}
@@ -395,18 +745,19 @@ export function PPTCopilotView({ sessionId, isListening, agentStatus, onToggleMi
                 style={{ display:"flex", flexDirection:"column", alignItems:"center",
                          gap:"1rem", cursor:"pointer", userSelect:"none" }}>
                 <div style={{ width:80, height:80, borderRadius:16,
-                              background:"rgba(245,167,0,0.15)", border:"2px dashed rgba(245,167,0,0.4)",
+                              background:C.amberBg, border:`2px dashed ${C.amber}`,
                               display:"flex", alignItems:"center", justifyContent:"center", fontSize:"2rem" }}>📊</div>
-                <p style={{ color:"#888", fontSize:"0.9rem", textAlign:"center" }}>
+                <p style={{ color:C.text2, fontSize:"0.9rem", textAlign:"center" }}>
                   Drop a .pptx file here<br/>
-                  <span style={{ fontSize:"0.75rem", color:"#555" }}>or click to browse</span>
+                  <span style={{ fontSize:"0.75rem", color:C.text3 }}>or click to browse</span>
                 </p>
               </div>
             ) : (
               /* Slide canvas — shows converted PNG image (exact copy of original) */
               <div style={{ width:"90%", maxWidth:720, aspectRatio:"16/9",
-                            background:"#111", borderRadius:6,
-                            boxShadow:"0 8px 48px rgba(0,0,0,0.7)",
+                            background:C.surface, borderRadius:6,
+                            border:`1.5px solid ${C.border}`,
+                            boxShadow:"0 8px 36px rgba(0,0,0,0.14)",
                             position:"relative", overflow:"hidden", flexShrink:0 }}>
                 {/* Slide counter */}
                 <div style={{ position:"absolute", top:8, right:8, zIndex:10,
@@ -429,7 +780,7 @@ export function PPTCopilotView({ sessionId, isListening, agentStatus, onToggleMi
                 ) : (
                   /* ── Text fallback (LibreOffice not installed) ── */
                   <div style={{ position:"absolute", inset:0,
-                                background: slides[current]?.bg_color || "#1a1a2e",
+                                background: slides[current]?.bg_color || C.surface,
                                 display:"flex", flexDirection:"column",
                                 alignItems:"center", justifyContent:"center",
                                 padding:"2rem", gap:"0.5rem" }}>
@@ -473,14 +824,14 @@ export function PPTCopilotView({ sessionId, isListening, agentStatus, onToggleMi
           {/* Thumbnail slider — shows THUMB_COUNT at a time */}
           {slides.length > 0 && (
             <div style={{ display:"flex", alignItems:"center", gap:"0.35rem",
-                          padding:"0.5rem 0.75rem", background:"#111",
-                          borderTop:"1px solid #222", height:72, flexShrink:0 }}>
+                          padding:"0.5rem 0.75rem", background:C.surface,
+                          borderTop:`1.5px solid ${C.border}`, height:72, flexShrink:0 }}>
               {/* Prev arrow */}
               <button onClick={() => setThumbStart(t => Math.max(0, t - 1))}
                 disabled={thumbStart === 0}
                 style={{ flexShrink:0, width:26, height:40, borderRadius:5,
-                         border:"1px solid #333", background:"#1A1A1A",
-                         color: thumbStart === 0 ? "#444" : "#AAA",
+                         border:`1px solid ${C.border}`, background:C.bg,
+                         color: thumbStart === 0 ? C.text3 : C.text2,
                          cursor: thumbStart === 0 ? "default" : "pointer",
                          fontSize:"0.75rem", display:"flex", alignItems:"center", justifyContent:"center" }}>
                 ‹
@@ -500,8 +851,8 @@ export function PPTCopilotView({ sessionId, isListening, agentStatus, onToggleMi
                       }).catch(()=>{});
                     }}
                       style={{ flex:1, minWidth:0, height:52, borderRadius:5,
-                               background: i===current ? C.amberBg : "#2A2A2A",
-                               border:`2px solid ${i===current ? C.amber : "#333"}`,
+                               background: i===current ? C.amberBg : C.bg,
+                               border:`2px solid ${i===current ? C.amber : C.border}`,
                                cursor:"pointer", overflow:"hidden", flexShrink:0,
                                transition:"all 0.18s", position:"relative" }}>
                       {s.image_url ? (
@@ -527,8 +878,8 @@ export function PPTCopilotView({ sessionId, isListening, agentStatus, onToggleMi
               <button onClick={() => setThumbStart(t => Math.min(slides.length - THUMB_COUNT, t + 1))}
                 disabled={thumbStart + THUMB_COUNT >= slides.length}
                 style={{ flexShrink:0, width:26, height:40, borderRadius:5,
-                         border:"1px solid #333", background:"#1A1A1A",
-                         color: thumbStart + THUMB_COUNT >= slides.length ? "#444" : "#AAA",
+                         border:`1px solid ${C.border}`, background:C.bg,
+                         color: thumbStart + THUMB_COUNT >= slides.length ? C.text3 : C.text2,
                          cursor: thumbStart + THUMB_COUNT >= slides.length ? "default" : "pointer",
                          fontSize:"0.75rem", display:"flex", alignItems:"center", justifyContent:"center" }}>
                 ›
@@ -565,6 +916,15 @@ export function PPTCopilotView({ sessionId, isListening, agentStatus, onToggleMi
               </button>
             ))}
             <div style={{ flex:1 }}/>
+            {/* Edit slide button */}
+            {slides.length > 0 && (
+              <button onClick={openEditModal}
+                style={{ padding:"0.4rem 0.85rem", borderRadius:6,
+                         background:C.amberBg, border:`1.5px solid ${C.amber}`,
+                         color:C.amberDark, cursor:"pointer", fontSize:"0.78rem", fontWeight:600 }}>
+                ✏️ Edit Slide
+              </button>
+            )}
             {/* Delete slide — admin only */}
             {slides.length > 0 && (
               <button onClick={handleDeleteSlide}
@@ -574,22 +934,48 @@ export function PPTCopilotView({ sessionId, isListening, agentStatus, onToggleMi
                 🗑 Delete Slide
               </button>
             )}
-            <button onClick={onToggleMic}
-              style={{ width:40, height:40, borderRadius:"50%",
-                       background:isListening?C.amber:C.amberBg, border:"none",
-                       fontSize:"1rem", cursor:"pointer",
-                       boxShadow:isListening?`0 0 0 6px rgba(245,167,0,0.2)`:"none",
-                       transition:"all 0.25s" }}>
-              {isListening?"⏹":"🎤"}
-            </button>
             <span style={{ fontSize:"0.7rem", color:C.text3 }}>Say "Go to slide 42"</span>
           </div>
+
+          {/* ── Speaker Notes ── moved below the slide viewer: this is the natural
+              reading position for notes (directly under what they annotate),
+              and gives the text far more horizontal room than the 290px sidebar
+              could — long notes no longer wrap into a tall, narrow column. ── */}
+          {slides.length > 0 && (
+            <div style={{ padding:"0.75rem 1rem", background:C.surface,
+                          borderTop:`1.5px solid ${C.border}` }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+                            marginBottom:"0.4rem" }}>
+                <div style={{ fontWeight:700, fontSize:"0.75rem", color:C.amber,
+                              letterSpacing:"0.06em" }}>SPEAKER NOTES</div>
+                <button onClick={openEditModal}
+                  title="Edit slide notes"
+                  style={{ fontSize:"0.68rem", color:C.text3, background:"none", border:"none",
+                           cursor:"pointer", padding:"0.1rem 0.3rem", borderRadius:4,
+                           transition:"color 0.15s" }}
+                  onMouseEnter={e => (e.currentTarget.style.color = C.amber)}
+                  onMouseLeave={e => (e.currentTarget.style.color = C.text3)}>
+                  ✏️ edit
+                </button>
+              </div>
+              <div style={{ background:C.bg, borderRadius:8, padding:"0.6rem 0.75rem",
+                            border:`1.5px solid ${C.border}`, maxHeight:110, overflowY:"auto",
+                            fontSize:"0.78rem", color:C.text2, lineHeight:1.6,
+                            whiteSpace:"pre-wrap", wordBreak:"break-word" }}>
+                {slides[current]?.notes
+                  ? slides[current].notes
+                  : <span style={{ color:C.text3, fontStyle:"italic" }}>No notes for this slide.</span>
+                }
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Agent activity panel */}
         <div style={{ width:290, background:C.surface, borderLeft:`1.5px solid ${C.border}`,
                       padding:"1rem", overflowY:"auto", flexShrink:0, display:"flex",
                       flexDirection:"column", gap:"1rem" }}>
+
           {/* Status */}
           <div>
             <div style={{ fontWeight:700, fontSize:"0.82rem", color:C.text1, marginBottom:"0.6rem",
@@ -665,6 +1051,164 @@ export function PPTCopilotView({ sessionId, isListening, agentStatus, onToggleMi
           </div>
         </div>
       </div>
+
+      {/* Edit Slide modal */}
+      {editOpen && (
+        <div style={{ position:"absolute", inset:0, background:"rgba(0,0,0,0.6)",
+                      display:"flex", alignItems:"center", justifyContent:"center", zIndex:60 }}>
+          <div style={{ background:C.surface, borderRadius:16, padding:"1.75rem",
+                        maxWidth:520, width:"92%", maxHeight:"86vh", overflowY:"auto",
+                        boxShadow:"0 12px 56px rgba(0,0,0,0.45)" }}>
+
+            <div style={{ fontWeight:700, fontSize:"1rem", color:C.text1, marginBottom:"0.25rem" }}>
+              ✏️ Edit Slide {current + 1}
+            </div>
+            <p style={{ fontSize:"0.76rem", color:C.text3, marginBottom:"1.25rem" }}>
+              Changes are saved to the .pptx file and thumbnails are regenerated.
+            </p>
+
+            {kindSchema ? (
+              kindSchema.fields.length === 0 ? (
+                <p style={{ fontSize:"0.8rem", color:C.text3, fontStyle:"italic", marginBottom:"1rem" }}>
+                  This slide has no editable fields — it's a fixed closing slide.
+                </p>
+              ) : (
+                kindSchema.fields.map(field => (
+                  <div key={field.key} style={{ marginBottom:"0.2rem" }}>
+                    <label style={{ fontSize:"0.78rem", fontWeight:600, color:C.text2, display:"block", marginBottom:"0.35rem" }}>
+                      {field.label || field.key}
+                    </label>
+                    {field.type === "table_grid" ? (
+                      // The "table" kind's extract/populate functions read/write
+                      // "headers"/"rows" at the TOP level of the data dict (matching
+                      // the generation-time content schema), not nested under a
+                      // "table" key the way every other field's `key` maps 1:1 onto
+                      // a data property — bind directly to those two keys instead.
+                      <KindFieldEditor
+                        field={field}
+                        value={{ headers: kindDraft?.headers, rows: kindDraft?.rows }}
+                        onChange={v => setKindDraft((d: any) => ({ ...(d || {}), headers: v.headers, rows: v.rows }))}
+                        C={C}
+                      />
+                    ) : (
+                      <KindFieldEditor
+                        field={field}
+                        value={kindDraft?.[field.key]}
+                        onChange={v => setKindDraft((d: any) => ({ ...(d || {}), [field.key]: v }))}
+                        C={C}
+                      />
+                    )}
+                  </div>
+                ))
+              )
+            ) : (
+              <>
+                {/* Title */}
+                <label style={{ fontSize:"0.78rem", fontWeight:600, color:C.text2, display:"block", marginBottom:"0.35rem" }}>
+                  Slide Title
+                </label>
+                <input
+                  value={editDraft.title}
+                  onChange={e => setEditDraft(d => ({ ...d, title: e.target.value }))}
+                  placeholder="Slide title"
+                  style={{ width:"100%", boxSizing:"border-box", padding:"0.55rem 0.75rem",
+                           borderRadius:8, border:`1.5px solid ${C.border}`,
+                           background:C.bg, color:C.text1, fontSize:"0.88rem",
+                           outline:"none", marginBottom:"1.1rem", fontFamily:"inherit" }}
+                />
+
+                {/* Bullets */}
+                <label style={{ fontSize:"0.78rem", fontWeight:600, color:C.text2, display:"block", marginBottom:"0.35rem" }}>
+                  Bullet Points
+                </label>
+                {editDraft.bullets.map((b, i) => (
+                  <div key={i} style={{ display:"flex", gap:"0.4rem", marginBottom:"0.4rem", alignItems:"flex-start" }}>
+                    <span style={{ marginTop:"0.55rem", color:C.text3, fontSize:"0.72rem",
+                                   minWidth:"1.2rem", textAlign:"right" }}>{i + 1}.</span>
+                    <textarea
+                      value={b}
+                      rows={2}
+                      onChange={e => setEditDraft(d => {
+                        const bullets = [...d.bullets];
+                        bullets[i] = e.target.value;
+                        return { ...d, bullets };
+                      })}
+                      placeholder={`Bullet ${i + 1}`}
+                      style={{ flex:1, padding:"0.45rem 0.65rem", borderRadius:6,
+                               border:`1.5px solid ${C.border}`, background:C.bg,
+                               color:C.text1, fontSize:"0.8rem", resize:"vertical",
+                               fontFamily:"inherit", outline:"none" }}
+                    />
+                    <button
+                      onClick={() => setEditDraft(d => ({ ...d, bullets: d.bullets.filter((_,j) => j !== i) }))}
+                      disabled={editDraft.bullets.length <= 1}
+                      style={{ marginTop:"0.4rem", width:22, height:22, borderRadius:"50%", border:"none",
+                               background:"rgba(239,68,68,0.15)", color:"#EF4444",
+                               cursor: editDraft.bullets.length <= 1 ? "default" : "pointer",
+                               fontSize:"0.75rem", opacity: editDraft.bullets.length <= 1 ? 0.35 : 1,
+                               flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                <button
+                  onClick={() => setEditDraft(d => ({ ...d, bullets: [...d.bullets, ""] }))}
+                  style={{ fontSize:"0.76rem", color:C.amber, background:"none", border:"none",
+                           cursor:"pointer", padding:"0.25rem 0", marginBottom:"1.1rem" }}>
+                  + Add bullet
+                </button>
+              </>
+            )}
+
+            {/* Speaker Notes — a universal field, present on every kind and on
+                uploaded decks alike, so it's shared by both edit modes above. */}
+            <label style={{ fontSize:"0.78rem", fontWeight:600, color:C.text2, display:"block", marginBottom:"0.35rem" }}>
+              Speaker Notes
+            </label>
+            <textarea
+              value={notesDraft}
+              rows={4}
+              onChange={e => setNotesDraft(e.target.value)}
+              placeholder="Notes visible to the presenter during the presentation…"
+              style={{ width:"100%", boxSizing:"border-box", padding:"0.55rem 0.75rem",
+                       borderRadius:8, border:`1.5px solid ${C.border}`,
+                       background:C.bg, color:C.text1, fontSize:"0.8rem",
+                       resize:"vertical", fontFamily:"inherit", outline:"none",
+                       marginBottom:"1.4rem" }}
+            />
+
+            {/* Regeneration note */}
+            {savingEdit && (
+              <div style={{ fontSize:"0.76rem", color:C.amber, marginBottom:"1rem",
+                            display:"flex", alignItems:"center", gap:"0.5rem" }}>
+                <span style={{ display:"inline-block", animation:"spin 1s linear infinite" }}>⟳</span>
+                Saving and regenerating slide thumbnails… (~5–10s)
+              </div>
+            )}
+
+            {/* Buttons */}
+            <div style={{ display:"flex", gap:"0.75rem" }}>
+              <button onClick={() => { setEditOpen(false); setSavingEdit(false); }}
+                disabled={savingEdit}
+                style={{ flex:1, padding:"0.6rem", borderRadius:8,
+                         border:`1.5px solid ${C.border}`, background:C.surface,
+                         color:C.text1, cursor:"pointer", fontSize:"0.88rem",
+                         opacity: savingEdit ? 0.5 : 1 }}>
+                Cancel
+              </button>
+              <button onClick={saveEditSlide}
+                disabled={savingEdit || (!kindSchema && !editDraft.title.trim())}
+                style={{ flex:2, padding:"0.6rem", borderRadius:8, border:"none",
+                         background: savingEdit || (!kindSchema && !editDraft.title.trim())
+                           ? "rgba(245,167,0,0.35)" : C.amber,
+                         color:"#fff", fontWeight:700, fontSize:"0.88rem",
+                         cursor: savingEdit || (!kindSchema && !editDraft.title.trim()) ? "default" : "pointer" }}>
+                {savingEdit ? "Saving…" : "Save Changes"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Create PPT modal */}
       {createModal && (
@@ -751,6 +1295,61 @@ export function PPTCopilotView({ sessionId, isListening, agentStatus, onToggleMi
                          color:"#fff", fontWeight:700, fontSize:"0.88rem",
                          cursor: generating || !genDesc.trim() ? "default" : "pointer" }}>
                 {generating ? "Generating…" : `Generate ${genCount} Slides`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Slide modal */}
+      {addSlideModal && (
+        <div style={{ position:"absolute", inset:0, background:"rgba(0,0,0,0.55)",
+                      display:"flex", alignItems:"center", justifyContent:"center", zIndex:50 }}>
+          <div style={{ background:C.surface, borderRadius:16, padding:"1.75rem",
+                        maxWidth:440, width:"90%", boxShadow:"0 8px 40px rgba(0,0,0,0.25)" }}>
+
+            <div style={{ fontWeight:700, fontSize:"1rem", color:C.text1, marginBottom:"0.25rem" }}>
+              Add Slide
+            </div>
+            <p style={{ fontSize:"0.78rem", color:C.text3, marginBottom:"1.2rem" }}>
+              Describe what the new slide should be about — it will be inserted
+              right after slide {current + 1}, styled to match the rest of the deck.
+            </p>
+
+            <textarea
+              value={addSlideDesc}
+              onChange={e => setAddSlideDesc(e.target.value)}
+              placeholder="e.g. Our Q4 roadmap, covering the three main initiatives"
+              rows={3}
+              style={{ width:"100%", boxSizing:"border-box", padding:"0.65rem 0.75rem",
+                       borderRadius:8, border:`1.5px solid ${C.border}`,
+                       background:C.bg, color:C.text1, fontSize:"0.82rem",
+                       resize:"vertical", fontFamily:"inherit", outline:"none",
+                       marginBottom:"1rem" }}
+            />
+
+            {addSlideError && (
+              <div style={{ fontSize:"0.78rem", color:"#EF4444", marginBottom:"1rem" }}>
+                {addSlideError}
+              </div>
+            )}
+
+            <div style={{ display:"flex", gap:"0.75rem" }}>
+              <button onClick={() => { setAddSlideModal(false); setAddSlideError(""); }}
+                disabled={addingSlide}
+                style={{ flex:1, padding:"0.6rem", borderRadius:8,
+                         border:`1.5px solid ${C.border}`, background:C.surface,
+                         color:C.text1, cursor:"pointer", fontSize:"0.88rem",
+                         opacity: addingSlide ? 0.5 : 1 }}>
+                Cancel
+              </button>
+              <button onClick={addSlide}
+                disabled={addingSlide}
+                style={{ flex:2, padding:"0.6rem", borderRadius:8, border:"none",
+                         background: addingSlide ? "rgba(255,184,0,0.35)" : "#FFB800",
+                         color:"#fff", fontWeight:700, fontSize:"0.88rem",
+                         cursor: addingSlide ? "default" : "pointer" }}>
+                {addingSlide ? "Adding…" : "Add Slide"}
               </button>
             </div>
           </div>

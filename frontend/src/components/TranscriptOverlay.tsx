@@ -46,7 +46,8 @@ function Sidebar({ active }: { active: string }) {
         {[{id:"dashboard",  icon:"⊞", label:"Main Dashboard"},
           {id:"ppt",        icon:"🖥", label:"PPT Copilot"},
           {id:"care",       icon:"🎧", label:"Customer Care"},
-          {id:"guidelines", icon:"📋", label:"Guidelines"}].map(n=>(
+          {id:"guidelines", icon:"📋", label:"Guidelines"},
+          {id:"about",      icon:"ℹ️", label:"About"}].map(n=>(
           <button key={n.id} onClick={()=>store.setPage(n.id as any)}
             style={{ width:"100%", display:"flex", alignItems:"center", gap:"0.6rem",
                      padding:"0.6rem 0.75rem", borderRadius:8, border:"none",
@@ -353,11 +354,12 @@ function useSession() {
         tool_end: (p:any) => {
           store.upsertToolCard({...p, status:p.result?.status||"ok"});
           const r = p.result;
-          if (p.tool === "flight_search" && r?.flights?.length) {
+          if (p.tool === "travel_search" && r?.results?.length) {
+            const kind = r.service_type || "flights";
             addT({
-              text: `Found ${r.flights.length} flights · ${r.origin} → ${r.destination}`,
+              text: `Found ${r.results.length} ${kind} · ${r.origin} → ${r.destination}`,
               speaker:"PILOT", role:"PILOT", confidence:1, timestamp:Date.now()/1000,
-              flights: r.flights, origin: r.origin, destination: r.destination, date: r.date,
+              results: r.results, service_type: kind, origin: r.origin, destination: r.destination, date: r.date,
             });
           } else if (r?.ticket_ref || r?.booking_ref) {
             const msg = r?.ticket_ref
@@ -385,6 +387,9 @@ function useSession() {
         },
         ppt_command: (p:any) => {
           window.dispatchEvent(new CustomEvent("ppt_command", { detail: p }));
+        },
+        navigate_page: (p:any) => {
+          if (p?.page) store.setPage(p.page);
         },
       });
       client.connectEvents();
@@ -776,6 +781,47 @@ function PPTPageView() {
   );
 }
 
+/* ── Travel search result normalization ──
+   travel_search returns a different natural field shape per service_type
+   (a hotel has no departure/arrival, a train has no price in the mock
+   data, ...) — normalize each into one common card shape so a single
+   renderer handles flights, hotels, and trains instead of three bespoke
+   card layouts. */
+interface TravelOption {
+  title: string;     // airline / hotel name / train operator
+  subtitle: string;  // flight number + times / location / departure time
+  price: string;     // fare, room price, or "" if not applicable
+  meta: string;      // route (flights) or phone (hotels/trains)
+  book_url?: string;
+}
+
+function normalizeTravelResult(r: any, serviceType: string, i: number, from: string, to: string): TravelOption {
+  if (serviceType === "hotels") {
+    return {
+      title: r.hotel || `Hotel ${i + 1}`,
+      subtitle: r.location ? `📍 ${r.location}` : "",
+      price: typeof r.price === "number" ? `₹${r.price.toLocaleString()}` : (r.price || "—"),
+      meta: r.phone ? `📞 ${r.phone}` : "",
+    };
+  }
+  if (serviceType === "trains") {
+    return {
+      title: r.operator || `Train ${i + 1}`,
+      subtitle: r.departure ? `Departs ${r.departure}` : "",
+      price: typeof r.price === "number" ? `₹${r.price.toLocaleString()}` : (r.price || ""),
+      meta: r.phone ? `📞 ${r.phone}` : "",
+    };
+  }
+  // flights (default) — also covers "cabs" loosely via the same generic fields
+  return {
+    title: r.airline || r.operator || `Option ${i + 1}`,
+    subtitle: `${r.id || r.flight || ""} · ${r.departure || r.dep || "—"} → ${r.arrival || r.arr || "—"}`,
+    price: typeof r.price === "number" ? `₹${r.price.toLocaleString()}` : (r.price || "—"),
+    meta: `${r.origin || from} → ${r.destination || to}`,
+    book_url: r.book_url || "",
+  };
+}
+
 /* ── CUSTOMER CARE VIEW ── */
 function CustomerCareView() {
   const sess    = useSession();
@@ -798,37 +844,34 @@ function CustomerCareView() {
   const mm = String(Math.floor(elapsed/60)).padStart(2,"0");
   const ss = String(elapsed%60).padStart(2,"0");
 
-  // Real-time flights from last flight_search tool result
-  const flightCard = store.toolCards.slice().reverse().find(c => c.tool === "flight_search");
-  const flightResult = flightCard?.result as any;
-  const rawFlights: any[] = flightResult?.flights || [];
-  const flights = rawFlights.map((f: any, i: number) => ({
-    id:       f.id || f.flight || `FL${i}`,
-    airline:  f.airline || `Flight ${i+1}`,
-    price:    typeof f.price === "number" ? `₹${f.price.toLocaleString()}` : (f.price || "—"),
-    dep:      f.departure || f.dep || "—",
-    arr:      f.arrival   || f.arr || "—",
-    from:     f.origin      || from,
-    to:       f.destination || to,
-    book_url: f.book_url || "",
-  }));
+  // Real-time results from the last travel_search tool result — covers
+  // flights, hotels, and trains, auto-detected server-side (service_type).
+  // Each has a different natural field shape (a hotel has no departure/
+  // arrival, a train has no price in the mock data, etc.) so results are
+  // normalized into one common card shape rather than assuming flight
+  // fields everywhere.
+  const travelCard = store.toolCards.slice().reverse().find(c => c.tool === "travel_search");
+  const travelResult = travelCard?.result as any;
+  const serviceType: string = travelResult?.service_type || "flights";
+  const rawResults: any[] = travelResult?.results || [];
+  const travelOptions = rawResults.map((r: any, i: number) => normalizeTravelResult(r, serviceType, i, from, to));
 
   // Auto-fill From/To/Date from voice search result
   useEffect(() => {
-    if (flightResult?.origin)      setFrom(flightResult.origin);
-    if (flightResult?.destination) setTo(flightResult.destination);
-    if (flightResult?.date)        setDate(flightResult.date);
+    if (travelResult?.origin)      setFrom(travelResult.origin);
+    if (travelResult?.destination) setTo(travelResult.destination);
+    if (travelResult?.date)        setDate(travelResult.date);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flightResult?.origin, flightResult?.destination, flightResult?.date]);
+  }, [travelResult?.origin, travelResult?.destination, travelResult?.date]);
 
   // Real-time task queue from store.toolCards (care tools only)
-  const careTools = ["crm_lookup","kb_search","ticket_create","ticket_update","ticket_close","flight_search","flight_book"];
+  const careTools = ["crm_lookup","kb_search","ticket_create","ticket_update","ticket_close","travel_search","flight_book"];
   const liveTasks = store.toolCards.filter(c => careTools.includes(c.tool));
 
   const toolLabel: Record<string,string> = {
     crm_lookup:"Verify Customer Identity", kb_search:"Search Knowledge Base",
     ticket_create:"Create Support Ticket", ticket_update:"Update Ticket",
-    ticket_close:"Close Ticket", flight_search:"Search Flights",
+    ticket_close:"Close Ticket", travel_search:"Search Travel Options",
     flight_book:"Book & Issue Ticket",
   };
 
@@ -852,7 +895,7 @@ function CustomerCareView() {
                     borderBottom:`1.5px solid ${C.border}`, flexShrink:0 }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
           <div>
-            <h2 style={{ fontWeight:800, fontSize:"1rem" }}>Active Session: Flight Booking</h2>
+            <h2 style={{ fontWeight:800, fontSize:"1rem" }}>Active Session: Travel Planner</h2>
             <p style={{ fontSize:"0.75rem", color:C.text3 }}>Connecting with user ID: 894-3B-ZULU</p>
           </div>
           <div style={{ display:"flex", gap:"0.75rem", alignItems:"center" }}>
@@ -878,16 +921,16 @@ function CustomerCareView() {
       </div>
 
       <div style={{ flex:1, display:"flex", overflow:"hidden" }}>
-        {/* flight search panel */}
+        {/* travel search panel */}
         <div style={{ width:210, background:"var(--bg2)", borderRight:`1.5px solid ${C.border}`,
                       padding:"0.85rem", overflowY:"auto", flexShrink:0, display:"flex",
                       flexDirection:"column", gap:"0.35rem" }}>
           <div style={{ fontSize:"0.68rem", fontWeight:700, letterSpacing:"0.08em",
-                        color:C.text3, marginBottom:"0.25rem" }}>FLIGHT SEARCH</div>
+                        color:C.text3, marginBottom:"0.25rem" }}>TRAVEL SEARCH</div>
           {/* From / To / Date inputs */}
           {[
             {icon:"🛫", placeholder:"From (e.g. JFK)", val:from, set:setFrom},
-            {icon:"🛬", placeholder:"To (e.g. LAX)",   val:to,   set:setTo},
+            {icon:"🛬", placeholder:"To / Location (e.g. LAX)", val:to, set:setTo},
             {icon:"📅", placeholder:"Date (e.g. 2026-07-01)", val:date, set:setDate},
           ].map(f=>(
             <div key={f.placeholder} style={{ display:"flex", alignItems:"center", gap:"0.35rem",
@@ -901,16 +944,16 @@ function CustomerCareView() {
             </div>
           ))}
           <div style={{ fontSize:"0.66rem", color:C.text3, marginTop:"0.1rem" }}>
-            Say "search flights from {from||"…"} to {to||"…"}" or type above
+            Say "find flights/hotels/trains from {from||"…"} to {to||"…"}" or type above
           </div>
-          {/* Live flight cards */}
-          {flights.length > 0 && (
+          {/* Live result cards — flights, hotels, or trains */}
+          {travelOptions.length > 0 && (
             <div style={{ marginTop:"0.35rem" }}>
               <div style={{ fontSize:"0.66rem", fontWeight:700, color:C.text3,
                             letterSpacing:"0.06em", marginBottom:"0.4rem" }}>
-                {flightResult?.source === "web" ? "LIVE RESULTS" : "RESULTS"}
+                {travelResult?.source === "web" ? "LIVE RESULTS" : `${serviceType.toUpperCase()} RESULTS`}
               </div>
-              {flights.map((f,i)=>(
+              {travelOptions.map((o,i)=>(
                 <div key={i} style={{ borderRadius:8, marginBottom:"0.4rem",
                                       border:`1.5px solid ${i===0?C.amber:C.border}`,
                                       background:i===0?C.amberBg:C.surface,
@@ -921,20 +964,24 @@ function CustomerCareView() {
                                   fontSize:"0.52rem", fontWeight:700,
                                   padding:"2px 6px", borderRadius:"0 8px 0 6px" }}>BEST</div>
                   )}
-                  <div style={{ padding:"0.45rem 0.55rem" }}>
+                  <div style={{ padding:"0.45rem 0.55rem", paddingRight: i===0 ? "2.6rem" : "0.55rem" }}>
                     <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                      <span style={{ fontSize:"0.72rem", fontWeight:700 }}>{f.airline}</span>
-                      <span style={{ fontSize:"0.74rem", fontWeight:800, color:C.amberDark }}>{f.price}</span>
+                      <span style={{ fontSize:"0.72rem", fontWeight:700 }}>{o.title}</span>
+                      {o.price && <span style={{ fontSize:"0.74rem", fontWeight:800, color:C.amberDark }}>{o.price}</span>}
                     </div>
-                    <div style={{ fontSize:"0.62rem", color:C.text2, marginTop:"0.15rem" }}>
-                      {f.id} · {f.dep} → {f.arr}
-                    </div>
-                    <div style={{ fontSize:"0.6rem", color:C.text3 }}>
-                      {f.from} → {f.to}
-                    </div>
+                    {o.subtitle && (
+                      <div style={{ fontSize:"0.62rem", color:C.text2, marginTop:"0.15rem" }}>
+                        {o.subtitle}
+                      </div>
+                    )}
+                    {o.meta && (
+                      <div style={{ fontSize:"0.6rem", color:C.text3 }}>
+                        {o.meta}
+                      </div>
+                    )}
                   </div>
-                  {f.book_url && (
-                    <a href={f.book_url} target="_blank" rel="noopener noreferrer"
+                  {o.book_url && (
+                    <a href={o.book_url} target="_blank" rel="noopener noreferrer"
                        style={{ display:"block", textAlign:"center",
                                 padding:"0.25rem", fontSize:"0.62rem",
                                 fontWeight:600, color: i===0 ? C.amberDark : C.text3,
@@ -948,10 +995,10 @@ function CustomerCareView() {
               ))}
             </div>
           )}
-          {flights.length === 0 && (
+          {travelOptions.length === 0 && (
             <div style={{ fontSize:"0.72rem", color:C.text3, textAlign:"center",
                           padding:"1rem 0", marginTop:"0.5rem" }}>
-              No results yet. Start a call and ask to search flights.
+              No results yet. Start a call and ask to search flights, hotels, or trains.
             </div>
           )}
         </div>
@@ -988,19 +1035,22 @@ function CustomerCareView() {
             {ts.map((t,i)=>{
               const isAgent = t.speaker==="PILOT" || t.role==="PILOT";
 
-              // ── Flight search result cards ──
-              if (t.flights?.length) {
+              // ── Travel search result cards (flights, hotels, or trains) ──
+              if (t.results?.length) {
+                const kind = t.service_type || "flights";
+                const icon = kind === "hotels" ? "🏨" : kind === "trains" ? "🚆" : "✈";
+                const options = (t.results as any[]).map((r, fi) => normalizeTravelResult(r, kind, fi, t.origin || "", t.destination || ""));
                 return (
                   <div key={i} style={{ marginBottom:"1rem", animation:"fadeIn 0.3s ease" }}>
                     <div style={{ display:"flex", alignItems:"center", gap:"0.4rem", marginBottom:"0.6rem" }}>
                       <div style={{ width:28,height:28,borderRadius:"50%",background:C.amber,
                                     display:"flex",alignItems:"center",justifyContent:"center",fontSize:"0.75rem",flexShrink:0 }}>🤖</div>
                       <span style={{ fontSize:"0.75rem", fontWeight:700, color:C.amberDark }}>
-                        ✈ {t.origin} → {t.destination} · {t.date || "Today"}
+                        {icon} {t.origin ? `${t.origin} → ${t.destination}` : t.destination} · {t.date || "Today"}
                       </span>
                     </div>
                     <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0.5rem", paddingLeft:"0.5rem" }}>
-                      {(t.flights as any[]).map((f:any, fi:number) => (
+                      {options.map((o, fi) => (
                         <div key={fi} style={{ borderRadius:12, overflow:"hidden",
                                                border:`1.5px solid ${fi===0?C.amber:C.border}`,
                                                background:fi===0?C.amberBg:C.surface,
@@ -1013,19 +1063,13 @@ function CustomerCareView() {
                                           padding:"3px 8px", borderRadius:"0 12px 0 8px" }}>BEST</div>
                           )}
                           <div style={{ padding:"0.7rem 0.75rem 0.5rem" }}>
-                            <div style={{ fontWeight:700, fontSize:"0.82rem", marginBottom:"0.15rem" }}>{f.airline}</div>
-                            <div style={{ fontSize:"0.68rem", color:C.text3, marginBottom:"0.35rem" }}>{f.flight}</div>
-                            <div style={{ display:"flex", alignItems:"center", gap:"0.3rem",
-                                          fontSize:"0.78rem", fontWeight:600, color:C.text1, marginBottom:"0.1rem" }}>
-                              <span>{f.departure || f.dep}</span>
-                              <span style={{ fontSize:"0.6rem", color:C.text3 }}>→</span>
-                              <span>{f.arrival || f.arr}</span>
-                            </div>
-                            <div style={{ fontSize:"0.62rem", color:C.text3 }}>{f.origin || f.from} → {f.destination || f.to}</div>
-                            <div style={{ fontSize:"0.9rem", fontWeight:800, color:C.amberDark, marginTop:"0.4rem" }}>{f.price}</div>
+                            <div style={{ fontWeight:700, fontSize:"0.82rem", marginBottom:"0.15rem" }}>{o.title}</div>
+                            {o.subtitle && <div style={{ fontSize:"0.68rem", color:C.text3, marginBottom:"0.35rem" }}>{o.subtitle}</div>}
+                            {o.meta && <div style={{ fontSize:"0.62rem", color:C.text3 }}>{o.meta}</div>}
+                            {o.price && <div style={{ fontSize:"0.9rem", fontWeight:800, color:C.amberDark, marginTop:"0.4rem" }}>{o.price}</div>}
                           </div>
-                          {f.book_url && (
-                            <a href={f.book_url} target="_blank" rel="noopener noreferrer"
+                          {o.book_url && (
+                            <a href={o.book_url} target="_blank" rel="noopener noreferrer"
                                style={{ display:"flex", alignItems:"center", justifyContent:"center",
                                         gap:"0.25rem", padding:"0.4rem",
                                         background:fi===0?C.amberBg:C.bg,
@@ -1190,10 +1234,11 @@ export function Dashboard() {
   const page = useAppStore(s=>s.page) as string;
   return (
     <div style={{ display:"flex", height:"100vh", overflow:"hidden", background:C.bg }}>
-      <Sidebar active={page==="ppt"?"ppt":page==="care"?"care":page==="guidelines"?"guidelines":"dashboard"}/>
+      <Sidebar active={page==="ppt"?"ppt":page==="care"?"care":page==="guidelines"?"guidelines":page==="about"?"about":"dashboard"}/>
       {page==="ppt"        ? <PPTPageView/> :
        page==="care"       ? <CustomerCareView/> :
        page==="guidelines" ? <GuidelinePageView/> :
+       page==="about"      ? <AboutPageView/> :
        page==="profile"    ? <ProfilePage/> :
        page==="settings"   ? <SettingsPage/> :
        <MainDashboard/>}
@@ -1222,17 +1267,18 @@ function GuidelinePageView() {
     },
     {
       icon: "🎧",
-      title: "CUSTOMER CARE & FLIGHT CENTER",
+      title: "CUSTOMER CARE & TRAVEL PLANNER",
       color: "#2563EB",
       accentBg: "color-mix(in srgb, #2563EB 8%, var(--bg))",
-      desc: "Natural-language flight search and customer care ticketing — results appear as inline cards in the conversation.",
+      desc: "Natural-language flight, hotel, and train search plus customer care ticketing — results appear as inline cards in the conversation.",
       commands: [
-        { spoken: "search flights from Mumbai to Delhi on 2026-07-01", action: "Backend lookup → inline card with airlines, fares, departure times, and a Google Flights booking link." },
-        { spoken: "search flights from New York to London",            action: "Origin/destination extracted automatically; date defaults to today if omitted." },
+        { spoken: "search flights from Mumbai to Delhi on 2026-07-01", action: "Backend lookup → inline card with airlines, fares, departure times, and a booking link." },
+        { spoken: "find hotels in Mumbai",                             action: "Returns hotel cards with name, location, price, and contact number for the given city." },
+        { spoken: "trains from Delhi to Mumbai",                       action: "Returns train cards with operator, departure time, and contact number for the route." },
         { spoken: "create ticket / open ticket",                       action: "Opens a new support ticket and logs the synopsis from your spoken description." },
         { spoken: "look up customer / CRM",                            action: "Pulls the customer record from CRM by name or context in the conversation." },
       ],
-      details: "Flight search results are rendered as interactive inline cards — not raw text — so schedules stay readable without cluttering the transcript. Parameters (origin, destination, date) are extracted via regex from natural speech; 'tomorrow' and 'today' resolve automatically. Ticket and CRM tools follow the same queue/interrupt concurrency model as all other PILOT tools.",
+      details: "Travel results are rendered as interactive inline cards — not raw text — so options stay readable without cluttering the transcript. Flights, hotels, and trains share one tool (travel_search) that infers the service type from your phrasing; hotels and trains need only one city, flights need both origin and destination. Parameters are extracted via regex from natural speech; 'tomorrow' and 'today' resolve automatically. Booking (flight_book) remains flight-specific. Ticket and CRM tools follow the same queue/interrupt concurrency model as all other PILOT tools.",
     },
   ];
 
@@ -1335,6 +1381,126 @@ function GuidelinePageView() {
             </div>
           </div>
         ))}
+
+      </div>
+    </div>
+  );
+}
+
+/* ── About ── */
+function AboutPageView() {
+  const capabilities = [
+    { icon:"🖥", title:"PPT Copilot",       desc:"Upload a deck and control it hands-free — navigate slides, summarize content, edit text and speaker notes, and generate notes for an entire presentation, all by voice." },
+    { icon:"🎧", title:"Customer Care",     desc:"Look up customers in CRM, search the knowledge base, and open, update, or close support tickets without touching a keyboard." },
+    { icon:"✈️", title:"Travel Planner",    desc:"Search flights, hotels, and trains in natural language — results come back as inline cards with fares, timings, and booking links." },
+    { icon:"🔒", title:"Voice Identity",    desc:"Every speaker is diarized and matched against an enrolled voice profile, so PILOT knows who's talking and enforces role-based permissions automatically." },
+  ];
+
+  const principles = [
+    { icon:"🏠", title:"Local-first",    desc:"Speech recognition, diarization, and the routing model all run on-device via Ollama and local Whisper — your voice never has to leave the machine to get a response." },
+    { icon:"⚡", title:"Low latency",    desc:"A fast deterministic keyword path handles common commands instantly; only ambiguous requests fall through to the LLM classifier." },
+    { icon:"🛡️", title:"Safety-gated",   desc:"Destructive actions (like deleting a slide) require an explicit spoken confirmation and are restricted by role before they ever execute." },
+  ];
+
+  return (
+    <div style={{ flex:1, display:"flex", flexDirection:"column", background:C.bg, overflow:"hidden" }}>
+      {/* Header */}
+      <div style={{ padding:"1.5rem 2.5rem", background:C.surface,
+                    borderBottom:`1.5px solid ${C.border}`, flexShrink:0 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:"0.6rem", marginBottom:"0.25rem" }}>
+          <span style={{ fontSize:"1.25rem" }}>ℹ️</span>
+          <h1 style={{ fontWeight:800, fontSize:"1.4rem", letterSpacing:"-0.02em", color:C.text1, margin:0 }}>
+            About PILOT
+          </h1>
+        </div>
+        <p style={{ fontSize:"0.85rem", color:C.text3, margin:0 }}>
+          What PILOT is, what it can do, and how it's built to work.
+        </p>
+      </div>
+
+      {/* Scrollable body */}
+      <div style={{ flex:1, overflowY:"auto", padding:"2rem 2.5rem 5rem",
+                    display:"flex", flexDirection:"column", gap:"2rem" }}>
+
+        {/* Intro card */}
+        <div style={{ background:C.amberBg, borderRadius:14, padding:"1.75rem",
+                      border:`1.5px solid ${C.amber}` }}>
+          <div style={{ fontSize:"0.72rem", fontWeight:800, color:C.amberDark,
+                        letterSpacing:"0.06em", marginBottom:"0.5rem" }}>
+            PORTABLE INTELLIGENT LISTENER FOR OPEN TASKING
+          </div>
+          <p style={{ fontSize:"0.92rem", color:C.text1, lineHeight:1.7, margin:0 }}>
+            PILOT is a real-time, voice-driven AI copilot. Speak naturally — PILOT listens,
+            figures out <em>who</em> is speaking, transcribes what was said, routes it to the
+            right tool or model, and replies out loud, in well under a second. No wake word,
+            no rigid command syntax — just talk to it the way you'd talk to a colleague.
+          </p>
+        </div>
+
+        {/* Capabilities */}
+        <div>
+          <h2 style={{ fontSize:"1rem", fontWeight:700, marginBottom:"1rem", color:C.text1 }}>
+            What it can do
+          </h2>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"1rem" }}>
+            {capabilities.map((c, i) => (
+              <div key={i} style={{ background:C.surface, borderRadius:14, padding:"1.25rem",
+                                    border:`1.5px solid ${C.border}` }}>
+                <div style={{ display:"flex", alignItems:"center", gap:"0.5rem", marginBottom:"0.5rem" }}>
+                  <span style={{ fontSize:"1.15rem" }}>{c.icon}</span>
+                  <span style={{ fontSize:"0.88rem", fontWeight:700, color:C.text1 }}>{c.title}</span>
+                </div>
+                <p style={{ fontSize:"0.82rem", color:C.text2, lineHeight:1.6, margin:0 }}>
+                  {c.desc}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Design principles */}
+        <div>
+          <h2 style={{ fontSize:"1rem", fontWeight:700, marginBottom:"1rem", color:C.text1 }}>
+            How it's built
+          </h2>
+          <div style={{ display:"flex", flexDirection:"column", gap:"0.75rem" }}>
+            {principles.map((p, i) => (
+              <div key={i} style={{ background:C.surface, borderRadius:12, padding:"1rem 1.25rem",
+                                    border:`1.5px solid ${C.border}`,
+                                    display:"flex", alignItems:"flex-start", gap:"0.85rem" }}>
+                <span style={{ fontSize:"1.1rem", flexShrink:0 }}>{p.icon}</span>
+                <div>
+                  <div style={{ fontSize:"0.85rem", fontWeight:700, color:C.text1, marginBottom:"0.2rem" }}>
+                    {p.title}
+                  </div>
+                  <p style={{ fontSize:"0.8rem", color:C.text2, lineHeight:1.6, margin:0 }}>
+                    {p.desc}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Pointer to full docs */}
+        <div style={{ background:C.surface, borderRadius:14, padding:"1.25rem 1.5rem",
+                      border:`1.5px dashed ${C.border}`,
+                      display:"flex", alignItems:"center", justifyContent:"space-between", gap:"1rem" }}>
+          <div>
+            <div style={{ fontSize:"0.85rem", fontWeight:700, color:C.text1, marginBottom:"0.2rem" }}>
+              Want the full command reference?
+            </div>
+            <p style={{ fontSize:"0.78rem", color:C.text3, margin:0 }}>
+              The Guidelines page lists every spoken command PILOT understands, module by module.
+            </p>
+          </div>
+          <button onClick={() => useAppStore.getState().setPage("guidelines")}
+            style={{ padding:"0.55rem 1.1rem", borderRadius:8, border:"none",
+                     background:C.amber, color:"#fff", fontWeight:600,
+                     fontSize:"0.8rem", cursor:"pointer", flexShrink:0 }}>
+            Open Guidelines →
+          </button>
+        </div>
 
       </div>
     </div>

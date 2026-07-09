@@ -10,6 +10,7 @@ export type WSEventType =
   | "job_queued"
   | "confirm_prompt"
   | "ppt_command"
+  | "navigate_page"
   | "tts_audio"
   | "tts_stop"
   | "tool_blocked"
@@ -54,6 +55,10 @@ export interface ConfirmPromptPayload {
 export interface PPTCommandPayload {
   action: "next" | "prev" | "first" | "last" | "goto";
   index?: number;
+}
+
+export interface NavigatePagePayload {
+  page: "dashboard" | "ppt" | "care" | "guidelines" | "about" | "profile" | "settings";
 }
 
 export interface JobQueuedPayload {
