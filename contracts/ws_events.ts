@@ -17,6 +17,8 @@ export type WSEventType =
   | "route_decision"
   | "session_state"
   | "wake_word"
+  | "sentiment_update"
+  | "resolution_update"
   | "ping";
 
 export interface WSEvent<T = unknown> {

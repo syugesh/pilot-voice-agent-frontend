@@ -1,5 +1,5 @@
 /**
- * Dashboard shell — Main · PPT · Customer Care
+ * Dashboard shell — Main · PPT · Customer Resolution
  * Flaw 12: PPT uses upload-only PPTCopilotView (no hardcoded sample)
  * Flaw 14: Session history popup on click
  * Flaw 15: Per-view local transcript state (no cross-page bleed)
@@ -10,7 +10,14 @@ import { useAppStore } from "../store/SessionStore";
 import { PilotWSClient } from "../ws_client";
 import { AudioCapture } from "../audio_capture";
 import { PPTCopilotView } from "./PPTView";
-import { ProfilePage, SettingsPage } from "./ProfilePage";
+import { ProfilePage } from "./ProfilePage";
+import {
+  IconBadge, DashboardIcon, MonitorIcon, HeadsetIcon, ClipboardIcon, InfoIcon,
+  GearIcon, LogOutIcon, MicIcon, AlertTriangleIcon, CheckIcon, CheckCircleIcon,
+  LockIcon, PinIcon, PhoneIcon, PlaneIcon, PlaneLandingIcon, CalendarIcon,
+  UserIcon, BotIcon, HotelIcon, TrainIcon, ZapIcon, ShieldIcon, HomeIcon,
+  SparkleIcon, MessageIcon, DotIcon, SendIcon, ArrowRightIcon, XIcon,
+} from "./Icons";
 
 const C = {
   amber:     "#F5A700",
@@ -43,36 +50,30 @@ function Sidebar({ active }: { active: string }) {
         </div>
       </div>
       <nav style={{ flex:1, padding:"0 0.5rem" }}>
-        {[{id:"dashboard",  icon:"⊞", label:"Main Dashboard"},
-          {id:"ppt",        icon:"🖥", label:"PPT Copilot"},
-          {id:"care",       icon:"🎧", label:"Customer Care"},
-          {id:"guidelines", icon:"📋", label:"Guidelines"},
-          {id:"about",      icon:"ℹ️", label:"About"}].map(n=>(
+        {[{id:"dashboard", Icon:DashboardIcon, label:"Main Dashboard"},
+          {id:"ppt",       Icon:MonitorIcon,   label:"PPT Copilot"},
+          {id:"care",      Icon:HeadsetIcon,   label:"Customer Resolution"},
+          {id:"about",     Icon:InfoIcon,      label:"About"}].map(n=>(
           <button key={n.id} onClick={()=>store.setPage(n.id as any)}
-            style={{ width:"100%", display:"flex", alignItems:"center", gap:"0.6rem",
-                     padding:"0.6rem 0.75rem", borderRadius:8, border:"none",
-                     background:active===n.id?C.amber:"transparent",
-                     color:active===n.id?"#fff":C.text2,
-                     fontWeight:active===n.id?600:400, fontSize:"0.85rem",
-                     marginBottom:"0.1rem", cursor:"pointer", textAlign:"left" }}>
-            <span>{n.icon}</span>{n.label}
+            style={{ width:"100%", display:"flex", alignItems:"center", gap:"0.65rem",
+                     padding:"0.55rem 0.65rem", borderRadius:8, border:"none",
+                     background:active===n.id?C.amberBg:"transparent",
+                     color:active===n.id?C.amberDark:C.text2,
+                     fontWeight:active===n.id?700:500, fontSize:"0.85rem",
+                     marginBottom:"0.15rem", cursor:"pointer", textAlign:"left",
+                     transition:"background 0.15s" }}>
+            <n.Icon size={17} strokeWidth={1.8}/>
+            {n.label}
           </button>
         ))}
       </nav>
       <div style={{ borderTop:`1.5px solid ${C.border}`, padding:"0.6rem" }}>
-        <button onClick={()=>store.setPage("settings" as any)}
-          style={{ width:"100%", display:"flex", alignItems:"center", gap:"0.6rem",
-                   padding:"0.5rem 0.75rem", borderRadius:8, border:"none",
-                   background:"transparent", color:C.text3,
-                   fontSize:"0.82rem", cursor:"pointer", marginBottom:"0.1rem" }}>
-          ⚙ Settings
-        </button>
         <button onClick={()=>store.logout()}
           style={{ width:"100%", display:"flex", alignItems:"center", gap:"0.6rem",
                    padding:"0.5rem 0.75rem", borderRadius:8, border:"none",
                    background:"transparent", color:"#EF4444",
                    fontSize:"0.82rem", cursor:"pointer", marginBottom:"0.1rem" }}>
-          ⎋ Sign Out
+          <LogOutIcon size={15}/> Sign Out
         </button>
         <div onClick={()=>store.setPage("profile" as any)}
           style={{ display:"flex", alignItems:"center", gap:"0.5rem",
@@ -119,55 +120,88 @@ function LiveTranscriptBar({ transcripts, agentStatus, isListening, wakeActive, 
     wakeActive: boolean; level: number; onToggle: ()=>void }) {
   const last = transcripts[transcripts.length-1];
   const userName = useAppStore(s => s.user?.name ?? "You");
+  const [typed, setTyped] = useState("");
+
+  const submit = () => {
+    if (!typed.trim()) return;
+    // Typed commands mirror the existing chat-input stubs elsewhere in the
+    // app (no text→intent backend path exists yet) — clears locally rather
+    // than silently pretending to submit somewhere real.
+    setTyped("");
+  };
+
   return (
     <div style={{ position:"absolute", bottom:0, left:0, right:0,
-                  background:C.surface,
-                  borderTop:`1.5px solid ${C.border}`,
-                  backdropFilter:"blur(8px)",
-                  padding:"0.75rem 1.25rem",
-                  display:"flex", alignItems:"center", gap:"1rem",
-                  boxShadow:"0 -4px 20px rgba(0,0,0,0.06)" }}>
-      <button onClick={onToggle}
-        style={{ width:44, height:44, borderRadius:"50%", flexShrink:0,
-                 background: wakeActive ? "#D1FAE5" : isListening ? C.amber : "var(--amber-bg)",
-                 border: wakeActive ? `2px solid ${C.green}` : "none",
-                 fontSize:"1.1rem", cursor:"pointer",
-                 boxShadow: wakeActive ? `0 0 0 6px rgba(34,197,94,0.2)`
-                           : isListening ? `0 0 0 6px rgba(245,167,0,0.2)` : "none",
-                 transition:"all 0.2s" }}>
-        🎤
-      </button>
-      <div style={{ flex:1, minWidth:0 }}>
-        {last ? (
-          <div style={{ animation:"fadeIn 0.3s ease" }}>
-            <span style={{ fontSize:"0.7rem", fontWeight:700,
-                           color: last.role==="PILOT" ? C.amber : C.amberDark,
-                           marginRight:"0.4rem" }}>
-              {speakerName(last.speaker, userName)}:
-            </span>
-            <span style={{ fontSize:"0.88rem", color:C.text1 }}>{last.text}</span>
+                  padding:"0.85rem 1.25rem 0.6rem",
+                  display:"flex", flexDirection:"column", alignItems:"center", gap:"0.4rem" }}>
+      <div style={{ width:"100%", maxWidth:920, display:"flex", alignItems:"center", gap:"0.65rem",
+                    background:C.surface, borderRadius:32, padding:"0.4rem 0.5rem 0.4rem 0.4rem",
+                    border:`1.5px solid ${C.border}`,
+                    boxShadow:"0 8px 28px rgba(0,0,0,0.08)" }}>
+        <button onClick={onToggle}
+          style={{ width:44, height:44, borderRadius:"50%", flexShrink:0,
+                   background: wakeActive ? "#D1FAE5" : isListening ? C.amber : C.amberBg,
+                   border: wakeActive ? `2px solid ${C.green}` : "none",
+                   cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center",
+                   boxShadow: wakeActive ? `0 0 0 6px rgba(34,197,94,0.2)`
+                             : isListening ? `0 0 0 6px rgba(245,167,0,0.2)` : "none",
+                   transition:"all 0.2s" }}>
+          <MicIcon size={19} color={wakeActive ? C.green : isListening ? "#fff" : C.amberDark} strokeWidth={2}/>
+        </button>
+
+        <div style={{ flex:1, minWidth:0 }}>
+          {last ? (
+            <div style={{ animation:"fadeIn 0.3s ease" }}>
+              <span style={{ fontSize:"0.7rem", fontWeight:700,
+                             color: last.role==="PILOT" ? C.amber : C.amberDark,
+                             marginRight:"0.4rem" }}>
+                {speakerName(last.speaker, userName)}:
+              </span>
+              <span style={{ fontSize:"0.88rem", color:C.text1 }}>{last.text}</span>
+            </div>
+          ) : (
+            <input value={typed} onChange={e=>setTyped(e.target.value)}
+              onKeyDown={e=>{ if (e.key==="Enter") submit(); }}
+              placeholder="Speak or type a command..."
+              style={{ width:"100%", border:"none", outline:"none", background:"transparent",
+                       fontSize:"0.88rem", color:C.text1 }}/>
+          )}
+        </div>
+
+        {isListening && <WaveBars active={isListening} level={level}/>}
+        {agentStatus.includes("speaking") || agentStatus.includes("Responding") ? (
+          <div style={{ display:"flex", alignItems:"center", gap:"0.4rem",
+                        padding:"0.3rem 0.75rem", borderRadius:20,
+                        background:C.amberBg, fontSize:"0.75rem",
+                        color:C.amberDark, fontWeight:600, flexShrink:0 }}>
+            <WaveBars active={true} level={0.6} count={5} color={C.amberDark}/>
+            PILOT speaking
+          </div>
+        ) : isListening ? (
+          <div style={{ display:"flex", alignItems:"center", gap:"0.35rem", flexShrink:0,
+                        fontSize:"0.72rem", color:C.green, fontWeight:600 }}>
+            <span style={{ width:7,height:7,borderRadius:"50%",background:C.green,
+                           display:"inline-block",animation:"pulse 1.2s infinite" }}/>
+            Listening
           </div>
         ) : (
-          <span style={{ fontSize:"0.88rem", color:C.text3 }}>{agentStatus}</span>
+          <span style={{ flexShrink:0, fontSize:"0.68rem", fontWeight:600, color:C.text3,
+                         background:"var(--bg2)", border:`1px solid ${C.border}`,
+                         borderRadius:6, padding:"0.2rem 0.45rem" }}>
+            ⌘K
+          </span>
         )}
+
+        <button onClick={submit}
+          style={{ width:38, height:38, borderRadius:"50%", flexShrink:0, border:"none",
+                   background:C.amber, cursor:"pointer",
+                   display:"flex", alignItems:"center", justifyContent:"center" }}>
+          <SendIcon size={15} color="#fff"/>
+        </button>
       </div>
-      {isListening && <WaveBars active={isListening} level={level}/>}
-      {agentStatus.includes("speaking") || agentStatus.includes("Responding") ? (
-        <div style={{ display:"flex", alignItems:"center", gap:"0.4rem",
-                      padding:"0.3rem 0.75rem", borderRadius:20,
-                      background:C.amberBg, fontSize:"0.75rem",
-                      color:C.amberDark, fontWeight:600, flexShrink:0 }}>
-          <WaveBars active={true} level={0.6} count={5} color={C.amberDark}/>
-          PILOT speaking
-        </div>
-      ) : isListening ? (
-        <div style={{ display:"flex", alignItems:"center", gap:"0.35rem", flexShrink:0,
-                      fontSize:"0.72rem", color:C.green, fontWeight:600 }}>
-          <span style={{ width:7,height:7,borderRadius:"50%",background:C.green,
-                         display:"inline-block",animation:"pulse 1.2s infinite" }}/>
-          Listening
-        </div>
-      ) : null}
+      <span style={{ fontSize:"0.68rem", color:C.text3 }}>
+        Press and hold · <strong style={{ color:C.text2 }}>Space</strong> · to talk
+      </span>
     </div>
   );
 }
@@ -182,6 +216,10 @@ function useSession() {
   const [level, setLevel]             = useState(0);
   const [transcripts, setTranscripts] = useState<any[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  // Live CSR-dashboard state (customer-care usecase): latest sentiment reading
+  // + the most recent resolution/escalation assessment.
+  const [sentiment, setSentiment]   = useState<any>(null);
+  const [resolution, setResolution] = useState<any>(null);
   const wsRef       = useRef<PilotWSClient|null>(null);
   const capRef      = useRef<AudioCapture|null>(null);
   const audioQ      = useRef<{buf: ArrayBuffer; mime: string}[]>([]);
@@ -316,6 +354,8 @@ function useSession() {
       const sid: string = res.session_id;
       setSessionId(sid);
       setTranscripts([]);
+      setSentiment(null);
+      setResolution(null);
       store.clearSession();
 
       const client = new PilotWSClient(sid, token, {
@@ -335,7 +375,7 @@ function useSession() {
           if (p.speaker === "PILOT") {
             setAgentStatus("PILOT responded");
           } else if (conf < 0.4 && p.speaker !== "PILOT") {
-            setAgentStatus(`⚠ Low confidence (${Math.round(conf*100)}%) — speak clearly`);
+            setAgentStatus(`Low confidence (${Math.round(conf*100)}%) — speak clearly`);
           } else if (p.speaker && p.speaker !== "spk-unknown") {
             setAgentStatus(`${p.speaker}: ${p.text.substring(0,55)}…`);
           }
@@ -369,6 +409,8 @@ function useSession() {
           }
         },
         job_queued: (p:any) => store.addJob({...p, status:"pending"}),
+        sentiment_update:  (p:any) => setSentiment(p),
+        resolution_update: (p:any) => setResolution(p),
         confirm_prompt: (p:any) => store.setConfirm(p),
         route_decision: (p:any) => {
           if (p.action==="delegate")   setAgentStatus(`On it — ${p.tool}...`);
@@ -421,7 +463,7 @@ function useSession() {
     if (isListening) stop(); else start(usecase);
   }
 
-  return { sessionId, isListening, wakeActive, agentStatus, level, toggle, stop, transcripts, isStreaming };
+  return { sessionId, isListening, wakeActive, agentStatus, level, toggle, stop, transcripts, isStreaming, sentiment, resolution };
 }
 
 /* ── Session History Modal (Flaw 14) ── */
@@ -441,7 +483,7 @@ function SessionHistoryModal({ sessionId, onClose, token }:
       .catch(() => setLoading(false));
   }, [sessionId, token]);
 
-  const ucIcon: Record<string,string> = { ppt:"🖥", customercare:"🎧", general:"⊞" };
+  const ucIcon: Record<string, React.ComponentType<any>> = { ppt:MonitorIcon, customercare:HeadsetIcon, general:DashboardIcon };
 
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.45)",
@@ -455,8 +497,8 @@ function SessionHistoryModal({ sessionId, onClose, token }:
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
                       marginBottom:"1rem" }}>
           <div>
-            <div style={{ fontWeight:800, fontSize:"1rem" }}>
-              {ucIcon[data?.session?.usecase||"general"]} Session History
+            <div style={{ fontWeight:800, fontSize:"1rem", display:"flex", alignItems:"center", gap:"0.5rem" }}>
+              {React.createElement(ucIcon[data?.session?.usecase||"general"], { size:16, color:C.amberDark })} Session History
             </div>
             <div style={{ fontSize:"0.72rem", color:C.text3, marginTop:"0.1rem" }}>
               #{data?.session?.display_id || sessionId.slice(0,8)} ·{" "}
@@ -470,8 +512,9 @@ function SessionHistoryModal({ sessionId, onClose, token }:
             </div>
           </div>
           <button onClick={onClose}
-            style={{ background:"none", border:"none", fontSize:"1.3rem", cursor:"pointer", color:C.text3 }}>
-            ✕
+            style={{ background:"none", border:"none", cursor:"pointer", color:C.text3,
+                     display:"flex", alignItems:"center" }}>
+            <XIcon size={18}/>
           </button>
         </div>
 
@@ -558,9 +601,14 @@ function SessionHistoryModal({ sessionId, onClose, token }:
 }
 
 /* ── Sessions List (Flaw 14) ── */
+const _UC_ICON: Record<string, React.ComponentType<any>> = { ppt:MonitorIcon, customercare:HeadsetIcon, general:DashboardIcon };
+const _UC_TOOL_LABEL: Record<string, string> = { ppt:"PPT Copilot", customercare:"Customer Resolution", general:"General" };
+const _UC_TONE: Record<string, "blue"|"green"|"violet"|"amber"> = { ppt:"blue", customercare:"green", general:"violet" };
+
 function SessionsList({ token }: { token: string }) {
   const [sessions, setSessions] = useState<any[]>([]);
   const [selected, setSelected] = useState<string|null>(null);
+  const [showAll, setShowAll]   = useState(false);
 
   useEffect(() => {
     fetch("/api/v1/sessions/list", { headers: { Authorization: `Bearer ${token}` } })
@@ -569,44 +617,72 @@ function SessionsList({ token }: { token: string }) {
       .catch(() => {});
   }, [token]);
 
-  const ucIcon: Record<string,string> = { ppt:"🖥", customercare:"🎧", general:"⊞" };
-
   if (sessions.length === 0) return null;
+  const rows = showAll ? sessions : sessions.slice(0, 6);
 
   return (
     <>
-      <div style={{ marginTop:"1.75rem" }}>
+      <div style={{ marginTop:"1.75rem", background:C.surface, borderRadius:14,
+                    border:`1.5px solid ${C.border}`, overflow:"hidden" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
-                      marginBottom:"0.85rem" }}>
-          <h2 style={{ fontSize:"1.2rem", fontWeight:700 }}>Recent Sessions</h2>
+                      padding:"1.1rem 1.25rem" }}>
+          <h2 style={{ fontSize:"1rem", fontWeight:700, margin:0 }}>Recent Sessions</h2>
+          {sessions.length > 6 && (
+            <button onClick={()=>setShowAll(s=>!s)}
+              style={{ background:"none", border:"none", cursor:"pointer",
+                       fontSize:"0.78rem", fontWeight:600, color:C.amberDark }}>
+              {showAll ? "Show less" : "View all"}
+            </button>
+          )}
         </div>
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:"0.65rem" }}>
-          {sessions.slice(0,9).map(s => (
-            <div key={s.session_id} onClick={() => setSelected(s.session_id)}
-              style={{ background:C.surface, borderRadius:12, padding:"0.9rem",
-                       border:`1.5px solid ${C.border}`, cursor:"pointer",
-                       transition:"box-shadow 0.15s" }}
-              onMouseEnter={e => (e.currentTarget.style.boxShadow="0 4px 16px rgba(0,0,0,0.07)")}
-              onMouseLeave={e => (e.currentTarget.style.boxShadow="none")}>
-              <div style={{ display:"flex", alignItems:"center", gap:"0.45rem", marginBottom:"0.45rem" }}>
-                <span style={{ fontSize:"1rem" }}>{ucIcon[s.usecase] || "📌"}</span>
-                <span style={{ marginLeft:"auto", fontSize:"0.62rem", padding:"0.1rem 0.4rem",
-                               borderRadius:4, fontWeight:600,
-                               background: s.state==="ENDED" ? "#F0FFF4" : C.amberBg,
-                               color: s.state==="ENDED" ? C.green : C.amberDark }}>
-                  {s.state}
-                </span>
-              </div>
-              <div style={{ fontSize:"0.78rem", fontWeight:700, color:C.text1, marginBottom:"0.3rem",
-                             overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                {s.title || s.usecase}
-              </div>
-              <div style={{ fontSize:"0.65rem", color:C.text3 }}>
-                {new Date(s.created_at).toLocaleString()}
-              </div>
-            </div>
-          ))}
-        </div>
+        <table style={{ width:"100%", borderCollapse:"collapse" }}>
+          <thead>
+            <tr style={{ borderTop:`1px solid ${C.border}`, borderBottom:`1px solid ${C.border}` }}>
+              {["Session ID","Tool","Started At","Status",""].map(h=>(
+                <th key={h} style={{ textAlign:"left", padding:"0.6rem 1.25rem",
+                                     fontSize:"0.68rem", fontWeight:700, color:C.text3,
+                                     letterSpacing:"0.04em" }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(s=>{
+              const Icon = _UC_ICON[s.usecase] || PinIcon;
+              const tone = _UC_TONE[s.usecase] || "amber";
+              const isIdle = (s.state||"").toUpperCase()==="IDLE";
+              return (
+                <tr key={s.session_id} onClick={()=>setSelected(s.session_id)}
+                    style={{ cursor:"pointer", borderBottom:`1px solid ${C.border}`, transition:"background 0.12s" }}
+                    onMouseEnter={e=>(e.currentTarget.style.background="var(--bg2)")}
+                    onMouseLeave={e=>(e.currentTarget.style.background="transparent")}>
+                  <td style={{ padding:"0.7rem 1.25rem" }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:"0.6rem" }}>
+                      <IconBadge size={26} tone={tone}><Icon size={13} strokeWidth={1.8}/></IconBadge>
+                      <span style={{ fontSize:"0.8rem", fontWeight:600, color:C.text1, fontFamily:"monospace" }}>
+                        #{s.display_id || s.session_id.slice(0,8)}
+                      </span>
+                    </div>
+                  </td>
+                  <td style={{ padding:"0.7rem 1.25rem", fontSize:"0.8rem", color:C.text2 }}>
+                    {_UC_TOOL_LABEL[s.usecase] || s.usecase}
+                  </td>
+                  <td style={{ padding:"0.7rem 1.25rem", fontSize:"0.78rem", color:C.text3 }}>
+                    {new Date(s.created_at).toLocaleString()}
+                  </td>
+                  <td style={{ padding:"0.7rem 1.25rem" }}>
+                    <span style={{ display:"inline-flex", alignItems:"center", gap:"0.35rem",
+                                   fontSize:"0.75rem", fontWeight:600,
+                                   color: isIdle ? C.green : C.amberDark }}>
+                      <DotIcon size={7} color={isIdle ? C.green : C.amber}/>
+                      {isIdle ? "Idle" : (s.state || "—")}
+                    </span>
+                  </td>
+                  <td style={{ padding:"0.7rem 1.25rem", textAlign:"right", color:C.text3 }}>⋯</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
 
       {selected && (
@@ -620,20 +696,170 @@ function SessionsList({ token }: { token: string }) {
   );
 }
 
+/* ── Pipeline detail dialog — the real, verified voice pipeline: every stage
+   here is sourced directly from the backend code (frame sizes, thresholds,
+   model names), not illustrative placeholder text. ── */
+const PIPELINE_STAGES = [
+  {
+    title: "Browser (Client)", tone: "blue" as const, status: "Live",
+    lines: ["getUserMedia → AudioWorklet → PCM chunks", "WebSocket /ws/audio → Server"],
+    tags: ["Transcript", "Tools", "Queue", "Events"],
+  },
+  {
+    title: "Silero VAD", tone: "violet" as const, status: "Active",
+    lines: ["Reads 32ms frames → speech detected", "Silence (288ms) → TurnSegment → turn_q"],
+    tags: ["turn_q"],
+  },
+  {
+    title: "Smart Turn", tone: "green" as const, status: "Active",
+    lines: ["Linguistic heuristic — trailing punctuation / dangling conjunctions", "Complete? → route now | Incomplete? → buffer & wait for more speech"],
+    tags: [],
+  },
+  {
+    title: "Diarizer", tone: "amber" as const, status: "Active",
+    lines: ["WeSpeaker streaming embeddings (primary) / full-turn batch (fallback)", "Outputs a labeled turn → identity_q"],
+    tags: ["identity_q"],
+  },
+  {
+    title: "Identity Resolver", tone: "blue" as const, status: "Active",
+    lines: ["Cosine similarity vs enrolled voice profiles", "Score ≥ 0.6 & margin ≥ 0.05 → identified | else → fallback role"],
+    tags: [],
+  },
+  {
+    title: "ASR Worker", tone: "violet" as const, status: "Active",
+    lines: ["faster-whisper distil-large-v3, INT8, CPU", "Dual write: transcript_q (live) + TranscriptLog (DB)"],
+    tags: ["transcript_q"],
+  },
+  {
+    title: "Front LLM", tone: "green" as const, status: "Active",
+    lines: ["Qwen3:8B (Ollama) → route decision JSON", "ignore | respond_now | delegate"],
+    tags: ["ignore", "respond_now", "delegate"],
+  },
+  {
+    title: "Background Agent", tone: "amber" as const, status: "Active",
+    lines: ["PolicyGate (RBAC) → BGSupervisor → Tool Registry", "Executes the tool, writes an audit log row, streams events"],
+    tags: ["job_queued", "tool_start", "tool_end"],
+  },
+  {
+    title: "Text-to-Speech", tone: "blue" as const, status: "Active",
+    lines: ["edge-tts (primary) → Kokoro-ONNX / macOS say (fallback)", "tts_audio event → browser playback"],
+    tags: ["tts_audio"],
+  },
+];
+
+function PipelineDetailModal({ onClose }: { onClose: ()=>void }) {
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.45)",
+                  display:"flex", alignItems:"center", justifyContent:"center", zIndex:300 }}
+         onClick={onClose}>
+      <div style={{ background:C.surface, borderRadius:16, padding:"1.5rem",
+                    width:560, maxHeight:"85vh", display:"flex", flexDirection:"column",
+                    boxShadow:"0 12px 48px rgba(0,0,0,0.18)", overflow:"hidden" }}
+           onClick={e => e.stopPropagation()}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"1.25rem" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:"0.55rem" }}>
+            <DashboardIcon size={17} color={C.amberDark}/>
+            <h2 style={{ fontSize:"1.05rem", fontWeight:800, margin:0 }}>Voice Agent Process Pipeline</h2>
+          </div>
+          <button onClick={onClose}
+            style={{ background:"none", border:"none", cursor:"pointer", color:C.text3,
+                     display:"flex", alignItems:"center" }}>
+            <XIcon size={18}/>
+          </button>
+        </div>
+
+        <div style={{ flex:1, overflowY:"auto", paddingRight:"0.25rem" }}>
+          <div style={{ position:"relative", paddingLeft:"2.5rem" }}>
+            <div style={{ position:"absolute", left:14, top:14, bottom:14, width:2,
+                          background:`repeating-linear-gradient(180deg, ${C.border} 0 4px, transparent 4px 8px)` }}/>
+            {PIPELINE_STAGES.map((stage, i) => (
+              <div key={stage.title} style={{ position:"relative", marginBottom: i===PIPELINE_STAGES.length-1 ? 0 : "0.85rem" }}>
+                <IconBadge size={28} tone={stage.tone}
+                  style={{ position:"absolute", left:-38, top:2, fontWeight:800, fontSize:"0.78rem" }}>
+                  {i+1}
+                </IconBadge>
+                <div style={{ background:"var(--bg2)", borderRadius:12, padding:"0.85rem 1rem",
+                              border:`1.5px solid ${C.border}` }}>
+                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"0.4rem" }}>
+                    <span style={{ fontSize:"0.85rem", fontWeight:700, color:C.text1 }}>{stage.title}</span>
+                    <span style={{ fontSize:"0.65rem", fontWeight:700, padding:"0.15rem 0.5rem", borderRadius:20,
+                                   background: stage.status==="Live" ? "rgba(34,197,94,0.12)" : C.amberBg,
+                                   color: stage.status==="Live" ? C.green : C.amberDark }}>
+                      {stage.status}
+                    </span>
+                  </div>
+                  {stage.lines.map((line, li) => (
+                    <div key={li} style={{ fontSize:"0.76rem", color:C.text2, lineHeight:1.55 }}>{line}</div>
+                  ))}
+                  {stage.tags.length > 0 && (
+                    <div style={{ display:"flex", flexWrap:"wrap", gap:"0.35rem", marginTop:"0.55rem" }}>
+                      {stage.tags.map(tag => (
+                        <span key={tag} style={{ fontSize:"0.62rem", fontWeight:600, color:C.text3,
+                                                 background:C.surface, border:`1px solid ${C.border}`,
+                                                 borderRadius:6, padding:"0.12rem 0.4rem", fontFamily:"monospace" }}>
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── MAIN DASHBOARD ── */
+function MetricTile({ Icon, tone, label, value, deltaPct, extra }:
+  { Icon: React.ComponentType<any>; tone:"blue"|"green"|"amber"|"violet"; label:string;
+    value:string; deltaPct?: number | null; extra?: string }) {
+  return (
+    <div style={{ background:C.surface, borderRadius:14, padding:"1.1rem",
+                  border:`1.5px solid ${C.border}` }}>
+      <IconBadge size={32} tone={tone} style={{ marginBottom:"0.7rem" }}><Icon size={16} strokeWidth={1.8}/></IconBadge>
+      <div style={{ fontSize:"0.76rem", color:C.text3, marginBottom:"0.2rem" }}>{label}</div>
+      <div style={{ fontSize:"1.5rem", fontWeight:800, color:C.text1, marginBottom:"0.2rem" }}>{value}</div>
+      {extra ? (
+        <div style={{ fontSize:"0.72rem", color:C.text3, display:"flex", alignItems:"center", gap:"0.3rem" }}>
+          <DotIcon size={6} color={C.green}/> {extra}
+        </div>
+      ) : deltaPct != null ? (
+        <div style={{ fontSize:"0.72rem", fontWeight:600, color: deltaPct>=0 ? C.green : "#EF4444" }}>
+          {deltaPct>=0 ? "+" : ""}{deltaPct}% vs yesterday
+        </div>
+      ) : (
+        <div style={{ fontSize:"0.72rem", color:C.text3 }}>—</div>
+      )}
+    </div>
+  );
+}
+
 function MainDashboard() {
   const store = useAppStore();
   const sess  = useSession();
   const ts    = sess.transcripts;   // Flaw 15: local to this view's session
   const tc    = store.toolCards;
+  const [showPipeline, setShowPipeline] = useState(false);
+  const [stats, setStats] = useState<any>(null);
+
+  useEffect(() => {
+    fetch("/api/v1/sessions/stats", { headers: { Authorization: `Bearer ${store.token}` } })
+      .then(r => r.json()).then(setStats).catch(() => {});
+  }, [store.token]);
+
+  const last = ts[ts.length-1];
+  const roleLevel = ({"admin":4,"manager":3,"csr":2,"operator":2,"developer":2,"user":1,"guest":1} as Record<string,number>)[store.user?.role?.toLowerCase()||"user"] ?? 1;
 
   return (
     <div style={{ flex:1, display:"flex", flexDirection:"column", position:"relative", overflow:"hidden" }}>
-      <div style={{ flex:1, overflow:"auto", padding:"2rem 2.5rem 6rem" }}>
+      <div style={{ flex:1, overflow:"auto", padding:"2rem 2.5rem 8rem" }}>
         {/* header */}
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:"1.5rem" }}>
           <div>
-            <h1 style={{ fontSize:"1.9rem", fontWeight:800, letterSpacing:"-0.02em" }}>Welcome, {store.user?.name || "there"}</h1>
+            <h1 style={{ fontSize:"1.9rem", fontWeight:800, letterSpacing:"-0.02em" }}>Welcome back, {store.user?.name || "there"}</h1>
             <p style={{ color:C.text3, fontSize:"0.85rem" }}>Live voice processing and agent orchestration.</p>
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:"0.65rem" }}>
@@ -642,8 +868,15 @@ function MainDashboard() {
                           border:`1.5px solid ${C.green}`, fontSize:"0.78rem",
                           fontWeight:700, color:C.green, cursor:"pointer",
                           userSelect:"none" as const }}>
-              🔐 ✓ Level {({"admin":4,"manager":3,"csr":2,"operator":2,"developer":2,"user":1,"guest":1} as Record<string,number>)[store.user?.role?.toLowerCase()||"user"] ?? 1} Access
+              <LockIcon size={13}/><CheckIcon size={13}/> Level {roleLevel} Access
             </div>
+            <button onClick={()=>setShowPipeline(true)}
+              style={{ display:"flex", alignItems:"center", gap:"0.4rem",
+                       padding:"0.45rem 0.9rem", background:C.surface, borderRadius:10,
+                       border:`1.5px solid ${C.amber}`, fontSize:"0.78rem",
+                       fontWeight:700, color:C.amberDark, cursor:"pointer" }}>
+              Open detailed view
+            </button>
             <div style={{ display:"flex", alignItems:"center", gap:"0.5rem",
                           padding:"0.5rem 1rem", background:C.surface, borderRadius:10,
                           border:`1.5px solid ${C.border}`, fontSize:"0.8rem", fontWeight:600 }}>
@@ -655,102 +888,170 @@ function MainDashboard() {
           </div>
         </div>
 
-        {/* 3 cards — fixed height, Queue scrollable */}
-        <div style={{ display:"grid", gridTemplateColumns:"2fr 1fr 1fr", gap:"1rem",
-                      marginBottom:"1.75rem", alignItems:"start" }}>
-          {/* Transcript */}
-          <div style={{ background:C.surface, borderRadius:14, padding:"1.1rem",
-                        border:`1.5px solid ${C.border}`, overflow:"hidden",
-                        height:400, display:"flex", flexDirection:"column" }}>
-            <div style={{ fontWeight:700, fontSize:"0.9rem", marginBottom:"0.75rem", flexShrink:0 }}>📋 Transcript</div>
-            <div style={{ flex:1, overflowY:"auto" }}>
-              {ts.length===0
-                ? <div style={{ color:C.text3, fontSize:"0.78rem" }}>Waiting for speech…</div>
-                : ts.slice(-8).map((t,i)=>(
-                  <div key={i} style={{ marginBottom:"0.5rem", animation:"fadeIn 0.3s ease" }}>
-                    <div style={{ fontSize:"0.68rem", fontWeight:700,
-                                  color: t.speaker==="PILOT" ? C.amber : C.amberDark,
-                                  marginBottom:"0.1rem" }}>
-                      {speakerName(t.speaker, store.user?.name ?? "You")}
+        {/* Live Transcript (wide) + Tools/Queue (narrow, stacked) */}
+        <div style={{ display:"grid", gridTemplateColumns:"2fr 1fr", gap:"1rem",
+                      marginBottom:"1.25rem", alignItems:"start" }}>
+          {/* Live Transcript */}
+          <div style={{ background:C.surface, borderRadius:14, padding:"1.25rem",
+                        border:`1.5px solid ${C.border}`, height:400,
+                        display:"flex", flexDirection:"column" }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+                          marginBottom:"0.9rem", flexShrink:0 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:"0.45rem", fontWeight:700, fontSize:"0.92rem" }}>
+                <MicIcon size={16} color={C.amberDark}/> Live Transcript
+              </div>
+              <span style={{ display:"flex", alignItems:"center", gap:"0.3rem",
+                             fontSize:"0.68rem", fontWeight:700, padding:"0.15rem 0.55rem", borderRadius:20,
+                             background: sess.isListening ? "rgba(34,197,94,0.12)" : "var(--bg2)",
+                             color: sess.isListening ? C.green : C.text3 }}>
+                <DotIcon size={6} color={sess.isListening ? C.green : C.text3}/>
+                {sess.isListening ? "Live" : "Idle"}
+              </span>
+            </div>
+
+            <div style={{ flex:1, overflowY:"auto", display:"flex", flexDirection:"column" }}>
+              {ts.length===0 ? (
+                <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center",
+                              justifyContent:"center", gap:"0.5rem", textAlign:"center" }}>
+                  <WaveBars active={sess.isListening} level={sess.level} count={5} color={C.text3}/>
+                  <div style={{ fontSize:"0.88rem", fontWeight:600, color:C.text1, marginTop:"0.4rem" }}>
+                    {sess.isListening ? "Listening for speech…" : "Not connected"}
+                  </div>
+                  <div style={{ fontSize:"0.76rem", color:C.text3 }}>
+                    Start speaking to see live transcription here.
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  {ts.slice(-8).map((t,i)=>(
+                    <div key={i} style={{ marginBottom:"0.5rem", animation:"fadeIn 0.3s ease" }}>
+                      <div style={{ fontSize:"0.68rem", fontWeight:700,
+                                    color: t.speaker==="PILOT" ? C.amber : C.amberDark,
+                                    marginBottom:"0.1rem" }}>
+                        {speakerName(t.speaker, store.user?.name ?? "You")}
+                      </div>
+                      <div style={{ background: t.speaker==="PILOT" ? C.amberBg : "var(--bg2)",
+                                    borderRadius:8, padding:"0.4rem 0.6rem",
+                                    fontSize:"0.8rem", lineHeight:1.5,
+                                    color: t.speaker==="PILOT" ? C.amberDark : C.text1 }}>
+                        {t.text}
+                        {sess.isStreaming && i === ts.slice(-8).length - 1 && (t as any)._sid &&
+                          <span style={{ display:"inline-block", width:"2px", height:"0.9em",
+                                         background:"currentColor", marginLeft:"1px",
+                                         verticalAlign:"text-bottom",
+                                         animation:"blink 0.6s step-end infinite" }}/>}
+                      </div>
                     </div>
-                    <div style={{ background: t.speaker==="PILOT" ? C.amberBg : "var(--bg2)",
-                                  borderRadius:8, padding:"0.4rem 0.6rem",
-                                  fontSize:"0.8rem", lineHeight:1.5,
-                                  color: t.speaker==="PILOT" ? C.amberDark : C.text1 }}>
-                      {t.text}
-                      {sess.isStreaming && i === ts.slice(-8).length - 1 && (t as any)._sid &&
-                        <span style={{ display:"inline-block", width:"2px", height:"0.9em",
-                                       background:"currentColor", marginLeft:"1px",
-                                       verticalAlign:"text-bottom",
-                                       animation:"blink 0.6s step-end infinite" }}/>}
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Stat chips */}
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:"0.6rem",
+                          marginTop:"0.9rem", flexShrink:0 }}>
+              {[
+                { label:"Language", value:"en-US" },
+                { label:"Model", value:"Whisper distil-large-v3" },
+                { label:"Latency", value: stats?.avg_latency_ms != null ? `~${stats.avg_latency_ms}ms` : "—" },
+                { label:"Confidence", value: last?.confidence != null ? `${Math.round(last.confidence*100)}%` : "—" },
+              ].map(chip => (
+                <div key={chip.label} style={{ background:"var(--bg2)", borderRadius:8,
+                                               padding:"0.5rem 0.6rem", border:`1px solid ${C.border}` }}>
+                  <div style={{ fontSize:"0.62rem", color:C.text3, marginBottom:"0.15rem" }}>{chip.label}</div>
+                  <div style={{ fontSize:"0.76rem", fontWeight:700, color:C.text1,
+                                overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{chip.value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Tools + Queue stacked */}
+          <div style={{ display:"flex", flexDirection:"column", gap:"1rem", height:400 }}>
+            <div style={{ background:C.surface, borderRadius:14, padding:"1.1rem",
+                          border:`1.5px solid ${C.border}` }}>
+              <div style={{ fontWeight:700, fontSize:"0.9rem", marginBottom:"0.75rem",
+                            display:"flex", alignItems:"center", gap:"0.4rem" }}>
+                <SparkleIcon size={15} color={C.amberDark}/> Tools
+              </div>
+              {([
+                {name:"PPT Copilot", Icon:MonitorIcon, page:"ppt"},
+                {name:"Customer Resolution", Icon:HeadsetIcon, page:"care"},
+              ] as const).map(t=>(
+                <div key={t.name}
+                     onClick={()=>store.setPage(t.page as any)}
+                     style={{ display:"flex", alignItems:"center", gap:"0.6rem",
+                              padding:"0.55rem 0.7rem", borderRadius:10, marginBottom:"0.5rem",
+                              background:"var(--bg2)", border:`1.5px solid ${C.border}`,
+                              cursor:"pointer", transition:"all 0.15s" }}
+                     onMouseEnter={e=>(e.currentTarget.style.background=C.amberBg,
+                                       e.currentTarget.style.borderColor=C.amber)}
+                     onMouseLeave={e=>(e.currentTarget.style.background="var(--bg2)",
+                                       e.currentTarget.style.borderColor=C.border)}>
+                  <t.Icon size={15} color={C.amberDark}/>
+                  <span style={{ flex:1, fontSize:"0.82rem", fontWeight:600 }}>{t.name}</span>
+                  <ArrowRightIcon size={13} color={C.text3}/>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ background:C.surface, borderRadius:14, padding:"1.1rem",
+                          border:`1.5px solid ${C.border}`, flex:1,
+                          display:"flex", flexDirection:"column", overflow:"hidden" }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+                            marginBottom:"0.75rem", flexShrink:0 }}>
+                <div style={{ fontWeight:700, fontSize:"0.9rem", display:"flex", alignItems:"center", gap:"0.4rem" }}>
+                  <DashboardIcon size={15} color={C.amberDark}/> Queue
+                </div>
+                <span style={{ fontSize:"0.72rem", fontWeight:600, color:C.amberDark }}>View all</span>
+              </div>
+              <div style={{ flex:1, overflowY:"auto" }}>
+              {tc.length===0
+                ? (
+                  <div style={{ height:"100%", display:"flex", flexDirection:"column", alignItems:"center",
+                                justifyContent:"center", gap:"0.4rem", textAlign:"center" }}>
+                    <DashboardIcon size={22} color={C.text3}/>
+                    <div style={{ fontSize:"0.78rem", fontWeight:600, color:C.text2 }}>No jobs in queue</div>
+                    <div style={{ fontSize:"0.68rem", color:C.text3 }}>Background jobs will appear here.</div>
+                  </div>
+                )
+                : tc.map((c,i)=>(
+                  <div key={i} style={{ display:"flex", alignItems:"flex-start", gap:"0.45rem", marginBottom:"0.55rem" }}>
+                    <div style={{ width:14,height:14,borderRadius:"50%",flexShrink:0,marginTop:2,
+                                  background:c.status==="ok"?C.green:c.status==="running"?C.amber:C.border,
+                                  display:"flex",alignItems:"center",justifyContent:"center",
+                                  color:"#fff" }}>
+                      {c.status==="ok" ? <CheckIcon size={9} strokeWidth={3}/>
+                       : c.status==="running" ? <DotIcon size={6}/> : <DotIcon size={6} filled={false}/>}
+                    </div>
+                    <div>
+                      <div style={{ fontSize:"0.78rem", fontWeight:600 }}>{c.tool}</div>
+                      <div style={{ fontSize:"0.68rem",
+                                    color:c.status==="running"?C.amber:"#AAA" }}>
+                        {c.status==="running"?"Running…":c.status==="ok"?"Done":"Pending"}
+                      </div>
                     </div>
                   </div>
                 ))
               }
-            </div>
-          </div>
-
-          {/* Tools */}
-          <div style={{ background:C.surface, borderRadius:14, padding:"1.1rem",
-                        border:`1.5px solid ${C.border}`, height:400,
-                        display:"flex", flexDirection:"column" }}>
-            <div style={{ fontWeight:700, fontSize:"0.9rem", marginBottom:"0.75rem" }}>✦ Tools</div>
-            {([
-              {name:"PPT Copilot", icon:"🖥", page:"ppt"},
-              {name:"Customer Care", icon:"🎧", page:"care"},
-            ] as const).map(t=>(
-              <div key={t.name}
-                   onClick={()=>store.setPage(t.page as any)}
-                   style={{ display:"flex", alignItems:"center", gap:"0.5rem",
-                            padding:"0.55rem 0.7rem", borderRadius:10, marginBottom:"0.5rem",
-                            background:"var(--bg2)", border:`1.5px solid ${C.border}`,
-                            cursor:"pointer", transition:"all 0.15s" }}
-                   onMouseEnter={e=>(e.currentTarget.style.background=C.amberBg,
-                                     e.currentTarget.style.borderColor=C.amber)}
-                   onMouseLeave={e=>(e.currentTarget.style.background="var(--bg2)",
-                                     e.currentTarget.style.borderColor=C.border)}>
-                <span style={{ fontSize:"1rem" }}>{t.icon}</span>
-                <span style={{ flex:1, fontSize:"0.82rem", fontWeight:600 }}>{t.name}</span>
-                <span style={{ fontSize:"0.7rem", color:C.text3 }}>→</span>
               </div>
-            ))}
-          </div>
-
-          {/* Queue */}
-          <div style={{ background:C.surface, borderRadius:14, padding:"1.1rem",
-                        border:`1.5px solid ${C.border}`, height:400,
-                        display:"flex", flexDirection:"column" }}>
-            <div style={{ fontWeight:700, fontSize:"0.9rem", marginBottom:"0.75rem", flexShrink:0 }}>⊡ Queue</div>
-            <div style={{ flex:1, overflowY:"auto" }}>
-            {tc.length===0
-              ? <div style={{ color:C.text3, fontSize:"0.78rem" }}>No jobs yet</div>
-              : tc.map((c,i)=>(
-                <div key={i} style={{ display:"flex", alignItems:"flex-start", gap:"0.45rem", marginBottom:"0.55rem" }}>
-                  <div style={{ width:14,height:14,borderRadius:"50%",flexShrink:0,marginTop:2,
-                                background:c.status==="ok"?C.green:c.status==="running"?C.amber:C.border,
-                                display:"flex",alignItems:"center",justifyContent:"center",
-                                fontSize:"0.5rem",color:"#fff" }}>
-                    {c.status==="ok"?"✓":c.status==="running"?"●":"○"}
-                  </div>
-                  <div>
-                    <div style={{ fontSize:"0.78rem", fontWeight:600 }}>{c.tool}</div>
-                    <div style={{ fontSize:"0.68rem",
-                                  color:c.status==="running"?C.amber:"#AAA" }}>
-                      {c.status==="running"?"Running…":c.status==="ok"?"Done":"Pending"}
-                    </div>
-                  </div>
-                </div>
-              ))
-            }
             </div>
           </div>
-
         </div>
 
+        {/* Metric tiles */}
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:"1rem", marginBottom:"0.5rem" }}>
+          <MetricTile Icon={DashboardIcon} tone="blue"   label="Sessions Today"  value={stats ? String(stats.sessions_today) : "—"} deltaPct={stats?.sessions_delta_pct}/>
+          <MetricTile Icon={ClipboardIcon} tone="green"  label="Transcripts"     value={stats ? String(stats.transcripts_today) : "—"} deltaPct={stats?.transcripts_delta_pct}/>
+          <MetricTile Icon={ZapIcon}       tone="amber"  label="Avg. Latency"    value={stats?.avg_latency_ms != null ? `${stats.avg_latency_ms}ms` : "—"} extra={stats?.avg_latency_ms != null ? (stats.avg_latency_ms < 1500 ? "Good" : "Slow") : undefined}/>
+          <MetricTile Icon={SparkleIcon}   tone="violet" label="Tools Used"      value={stats ? String(stats.tools_today) : "—"} deltaPct={stats?.tools_delta_pct}/>
+        </div>
 
         {/* Recent Sessions — Flaw 14 */}
         {store.token && <SessionsList token={store.token}/>}
       </div>
+
+      {showPipeline && <PipelineDetailModal onClose={()=>setShowPipeline(false)}/>}
 
       <LiveTranscriptBar
         transcripts={ts} agentStatus={sess.agentStatus}
@@ -790,8 +1091,10 @@ function PPTPageView() {
 interface TravelOption {
   title: string;     // airline / hotel name / train operator
   subtitle: string;  // flight number + times / location / departure time
+  subtitleIcon?: "pin" | null;
   price: string;     // fare, room price, or "" if not applicable
   meta: string;      // route (flights) or phone (hotels/trains)
+  metaIcon?: "phone" | "route" | null;
   book_url?: string;
 }
 
@@ -799,9 +1102,11 @@ function normalizeTravelResult(r: any, serviceType: string, i: number, from: str
   if (serviceType === "hotels") {
     return {
       title: r.hotel || `Hotel ${i + 1}`,
-      subtitle: r.location ? `📍 ${r.location}` : "",
+      subtitle: r.location || "",
+      subtitleIcon: r.location ? "pin" : null,
       price: typeof r.price === "number" ? `₹${r.price.toLocaleString()}` : (r.price || "—"),
-      meta: r.phone ? `📞 ${r.phone}` : "",
+      meta: r.phone || "",
+      metaIcon: r.phone ? "phone" : null,
     };
   }
   if (serviceType === "trains") {
@@ -809,7 +1114,8 @@ function normalizeTravelResult(r: any, serviceType: string, i: number, from: str
       title: r.operator || `Train ${i + 1}`,
       subtitle: r.departure ? `Departs ${r.departure}` : "",
       price: typeof r.price === "number" ? `₹${r.price.toLocaleString()}` : (r.price || ""),
-      meta: r.phone ? `📞 ${r.phone}` : "",
+      meta: r.phone || "",
+      metaIcon: r.phone ? "phone" : null,
     };
   }
   // flights (default) — also covers "cabs" loosely via the same generic fields
@@ -818,75 +1124,62 @@ function normalizeTravelResult(r: any, serviceType: string, i: number, from: str
     subtitle: `${r.id || r.flight || ""} · ${r.departure || r.dep || "—"} → ${r.arrival || r.arr || "—"}`,
     price: typeof r.price === "number" ? `₹${r.price.toLocaleString()}` : (r.price || "—"),
     meta: `${r.origin || from} → ${r.destination || to}`,
+    metaIcon: "route",
     book_url: r.book_url || "",
   };
 }
 
-/* ── CUSTOMER CARE VIEW ── */
+/* ── CUSTOMER RESOLUTION VIEW (CSR dashboard) ──
+   Live-call assistant for a support rep: sentiment/frustration meter, AI issue
+   summary, retrieved KB procedures, resolution-confidence, and an escalate-or-
+   resolve recommendation. All driven by the sentiment_update / resolution_update
+   WS events plus the live transcript. */
+function sentimentColor(s: string): string {
+  return s === "negative" ? "#EF4444" : s === "positive" ? C.green : C.amber;
+}
+
 function CustomerCareView() {
   const sess    = useSession();
   const store   = useAppStore();
   const ts      = sess.transcripts;
-  const [input, setInput] = useState("");
   const [elapsed, setElapsed] = useState(0);
-  const [from, setFrom]   = useState("");
-  const [to, setTo]       = useState("");
-  const [date, setDate]   = useState(""); // used in flight search hint text
   const endRef = useRef<HTMLDivElement>(null);
+
+  const sentiment  = sess.sentiment;   // {sentiment, sentiment_score, frustration_score, urgency}
+  const resolution = sess.resolution;  // {resolution_confidence, recommendation, reasoning, escalation_target, escalation_reasons[], issue_summary, kb_articles[]}
 
   useEffect(()=>{
     const t = setInterval(()=>setElapsed(e=>e+1), 1000);
     return ()=>clearInterval(t);
   },[]);
-
   useEffect(()=>{ endRef.current?.scrollIntoView({behavior:"smooth"}); }, [ts.length]);
 
   const mm = String(Math.floor(elapsed/60)).padStart(2,"0");
   const ss = String(elapsed%60).padStart(2,"0");
 
-  // Real-time results from the last travel_search tool result — covers
-  // flights, hotels, and trains, auto-detected server-side (service_type).
-  // Each has a different natural field shape (a hotel has no departure/
-  // arrival, a train has no price in the mock data, etc.) so results are
-  // normalized into one common card shape rather than assuming flight
-  // fields everywhere.
-  const travelCard = store.toolCards.slice().reverse().find(c => c.tool === "travel_search");
-  const travelResult = travelCard?.result as any;
-  const serviceType: string = travelResult?.service_type || "flights";
-  const rawResults: any[] = travelResult?.results || [];
-  const travelOptions = rawResults.map((r: any, i: number) => normalizeTravelResult(r, serviceType, i, from, to));
+  const frustration = sentiment?.frustration_score ?? 0;
+  const frustPct = Math.round(frustration * 100);
+  const sentLabel = sentiment?.sentiment ? sentiment.sentiment[0].toUpperCase() + sentiment.sentiment.slice(1) : "—";
+  const urgency = sentiment?.urgency || "low";
+  const urgencyColor = urgency === "high" ? "#EF4444" : urgency === "medium" ? C.amber : C.green;
 
-  // Auto-fill From/To/Date from voice search result
-  useEffect(() => {
-    if (travelResult?.origin)      setFrom(travelResult.origin);
-    if (travelResult?.destination) setTo(travelResult.destination);
-    if (travelResult?.date)        setDate(travelResult.date);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [travelResult?.origin, travelResult?.destination, travelResult?.date]);
+  const conf = resolution?.resolution_confidence;
+  const confPct = conf != null ? Math.round(conf * 100) : null;
+  const isEscalate = resolution?.recommendation === "escalate";
 
-  // Real-time task queue from store.toolCards (care tools only)
-  const careTools = ["crm_lookup","kb_search","ticket_create","ticket_update","ticket_close","travel_search","flight_book"];
+  // Care-tool task queue (kept from the prior view, minus travel)
+  const careTools = ["crm_lookup","kb_search","ticket_create","ticket_update","ticket_close","resolution_assess","escalate_ticket"];
   const liveTasks = store.toolCards.filter(c => careTools.includes(c.tool));
-
   const toolLabel: Record<string,string> = {
-    crm_lookup:"Verify Customer Identity", kb_search:"Search Knowledge Base",
-    ticket_create:"Create Support Ticket", ticket_update:"Update Ticket",
-    ticket_close:"Close Ticket", travel_search:"Search Travel Options",
-    flight_book:"Book & Issue Ticket",
+    crm_lookup:"Verify Customer", kb_search:"Search Knowledge Base",
+    ticket_create:"Create Ticket", ticket_update:"Update Ticket",
+    ticket_close:"Close Ticket", resolution_assess:"Assess Resolution",
+    escalate_ticket:"Create Escalation",
   };
 
-  // Status timeline derived from live tool activity
-  const now = new Date();
-  const fmt = (d:Date) => d.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
-  const timeline = [
-    {l:"Session Connected", t: fmt(new Date(now.getTime() - elapsed*1000)), done:true, active:false},
-    ...liveTasks.map(c => ({
-      l: toolLabel[c.tool] || c.tool,
-      t: c.status === "ok" ? "Done" : c.status === "running" ? "In progress…" : "Pending",
-      done: c.status === "ok",
-      active: c.status === "running",
-    })),
-  ];
+  const panelLabel = (txt:string): React.CSSProperties => ({
+    fontSize:"0.66rem", fontWeight:700, letterSpacing:"0.08em", color:C.text3,
+  });
 
   return (
     <div style={{ flex:1, display:"flex", flexDirection:"column", position:"relative", overflow:"hidden" }}>
@@ -895,8 +1188,8 @@ function CustomerCareView() {
                     borderBottom:`1.5px solid ${C.border}`, flexShrink:0 }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
           <div>
-            <h2 style={{ fontWeight:800, fontSize:"1rem" }}>Active Session: Travel Planner</h2>
-            <p style={{ fontSize:"0.75rem", color:C.text3 }}>Connecting with user ID: 894-3B-ZULU</p>
+            <h2 style={{ fontWeight:800, fontSize:"1rem" }}>Active Session: Customer Resolution</h2>
+            <p style={{ fontSize:"0.75rem", color:C.text3 }}>Live call — AI resolution &amp; escalation assist</p>
           </div>
           <div style={{ display:"flex", gap:"0.75rem", alignItems:"center" }}>
             <button onClick={()=>sess.toggle("customercare")}
@@ -904,14 +1197,12 @@ function CustomerCareView() {
                        padding:"0.35rem 0.8rem", borderRadius:20,
                        background: sess.wakeActive ? "#EEF9EE" : sess.isListening ? C.amberBg : "var(--amber-bg)",
                        border:`1.5px solid ${sess.wakeActive ? C.green : sess.isListening ? C.amber : C.border}`,
-                       fontSize:"0.75rem",
-                       color: sess.wakeActive ? C.green : C.amberDark,
+                       fontSize:"0.75rem", color: sess.wakeActive ? C.green : C.amberDark,
                        fontWeight:600, cursor:"pointer",
                        boxShadow: sess.wakeActive ? `0 0 0 3px rgba(34,197,94,0.18)` : "none",
                        transition:"all 0.2s" }}>
               <span style={{ width:7,height:7,borderRadius:"50%",
-                             background: sess.wakeActive ? C.green : C.amber,
-                             display:"inline-block",
+                             background: sess.wakeActive ? C.green : C.amber, display:"inline-block",
                              animation: sess.wakeActive ? "pulse 1s ease-in-out infinite" : "none" }}/>
               {sess.wakeActive ? "PILOT Active" : sess.isListening ? "Standby" : "Start Call"}
             </button>
@@ -921,99 +1212,80 @@ function CustomerCareView() {
       </div>
 
       <div style={{ flex:1, display:"flex", overflow:"hidden" }}>
-        {/* travel search panel */}
-        <div style={{ width:210, background:"var(--bg2)", borderRight:`1.5px solid ${C.border}`,
-                      padding:"0.85rem", overflowY:"auto", flexShrink:0, display:"flex",
-                      flexDirection:"column", gap:"0.35rem" }}>
-          <div style={{ fontSize:"0.68rem", fontWeight:700, letterSpacing:"0.08em",
-                        color:C.text3, marginBottom:"0.25rem" }}>TRAVEL SEARCH</div>
-          {/* From / To / Date inputs */}
-          {[
-            {icon:"🛫", placeholder:"From (e.g. JFK)", val:from, set:setFrom},
-            {icon:"🛬", placeholder:"To / Location (e.g. LAX)", val:to, set:setTo},
-            {icon:"📅", placeholder:"Date (e.g. 2026-07-01)", val:date, set:setDate},
-          ].map(f=>(
-            <div key={f.placeholder} style={{ display:"flex", alignItems:"center", gap:"0.35rem",
-                                              background:C.surface, borderRadius:8,
-                                              border:`1.5px solid ${C.border}`, padding:"0.3rem 0.5rem" }}>
-              <span style={{ fontSize:"0.85rem" }}>{f.icon}</span>
-              <input value={f.val} onChange={e=>f.set(e.target.value)}
-                placeholder={f.placeholder}
-                style={{ flex:1, border:"none", outline:"none", fontSize:"0.72rem",
-                         background:"transparent", color:C.text1 }}/>
-            </div>
-          ))}
-          <div style={{ fontSize:"0.66rem", color:C.text3, marginTop:"0.1rem" }}>
-            Say "find flights/hotels/trains from {from||"…"} to {to||"…"}" or type above
-          </div>
-          {/* Live result cards — flights, hotels, or trains */}
-          {travelOptions.length > 0 && (
-            <div style={{ marginTop:"0.35rem" }}>
-              <div style={{ fontSize:"0.66rem", fontWeight:700, color:C.text3,
-                            letterSpacing:"0.06em", marginBottom:"0.4rem" }}>
-                {travelResult?.source === "web" ? "LIVE RESULTS" : `${serviceType.toUpperCase()} RESULTS`}
+        {/* ── LEFT: Live Intelligence — sentiment + urgency + AI summary ── */}
+        <div style={{ width:250, background:"var(--bg2)", borderRight:`1.5px solid ${C.border}`,
+                      padding:"0.9rem", overflowY:"auto", flexShrink:0, display:"flex",
+                      flexDirection:"column", gap:"0.9rem" }}>
+          <div>
+            <div style={panelLabel("")}>CUSTOMER SENTIMENT</div>
+            <div style={{ background:C.surface, borderRadius:10, border:`1.5px solid ${C.border}`,
+                          padding:"0.8rem", marginTop:"0.45rem" }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:"0.5rem" }}>
+                <span style={{ fontSize:"0.9rem", fontWeight:800, color: sentiment ? sentimentColor(sentiment.sentiment) : C.text3 }}>
+                  {sentLabel}
+                </span>
+                <span style={{ fontSize:"0.66rem", color:C.text3 }}>Frustration</span>
               </div>
-              {travelOptions.map((o,i)=>(
-                <div key={i} style={{ borderRadius:8, marginBottom:"0.4rem",
-                                      border:`1.5px solid ${i===0?C.amber:C.border}`,
-                                      background:i===0?C.amberBg:C.surface,
-                                      overflow:"hidden", position:"relative" }}>
-                  {i===0 && (
-                    <div style={{ position:"absolute", top:0, right:0,
-                                  background:C.amber, color:"#fff",
-                                  fontSize:"0.52rem", fontWeight:700,
-                                  padding:"2px 6px", borderRadius:"0 8px 0 6px" }}>BEST</div>
-                  )}
-                  <div style={{ padding:"0.45rem 0.55rem", paddingRight: i===0 ? "2.6rem" : "0.55rem" }}>
-                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                      <span style={{ fontSize:"0.72rem", fontWeight:700 }}>{o.title}</span>
-                      {o.price && <span style={{ fontSize:"0.74rem", fontWeight:800, color:C.amberDark }}>{o.price}</span>}
+              {/* Frustration meter */}
+              <div style={{ height:10, borderRadius:6, background:"var(--bg2)", overflow:"hidden", marginBottom:"0.3rem" }}>
+                <div style={{ height:"100%", width:`${frustPct}%`,
+                              background: frustration>=0.7 ? "#EF4444" : frustration>=0.4 ? C.amber : C.green,
+                              borderRadius:6, transition:"width 0.4s" }}/>
+              </div>
+              <div style={{ display:"flex", justifyContent:"space-between" }}>
+                <span style={{ fontSize:"0.62rem", color:C.text3 }}>{sentiment ? `${frustPct}%` : "Awaiting speech"}</span>
+                <span style={{ fontSize:"0.62rem", fontWeight:700, color:urgencyColor }}>
+                  Urgency: {urgency}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div style={panelLabel("")}>AI ISSUE SUMMARY</div>
+            <div style={{ background:C.surface, borderRadius:10, border:`1.5px solid ${C.border}`,
+                          padding:"0.8rem", marginTop:"0.45rem", fontSize:"0.76rem", lineHeight:1.55,
+                          color: resolution?.issue_summary ? C.text1 : C.text3 }}>
+              {resolution?.issue_summary || "The AI issue synopsis will appear here once the customer describes their problem."}
+            </div>
+          </div>
+
+          {/* Task queue */}
+          <div>
+            <div style={panelLabel("")}>ACTIVITY</div>
+            <div style={{ marginTop:"0.45rem" }}>
+              {liveTasks.length === 0
+                ? <div style={{ fontSize:"0.7rem", color:C.text3 }}>No AI actions yet.</div>
+                : liveTasks.map((t,i)=>(
+                  <div key={i} style={{ display:"flex", alignItems:"center", gap:"0.45rem",
+                                        padding:"0.35rem 0.4rem", borderRadius:8, marginBottom:"0.25rem",
+                                        background:t.status==="running"?C.amberBg:"transparent" }}>
+                    <div style={{ width:15,height:15,borderRadius:"50%",flexShrink:0,
+                                  background:t.status==="ok"?C.green:t.status==="running"?C.amber:"var(--amber-bg)",
+                                  display:"flex",alignItems:"center",justifyContent:"center",color:"#fff" }}>
+                      {t.status==="ok" ? <CheckIcon size={9} strokeWidth={3}/>
+                       : t.status==="running" ? <DotIcon size={6}/> : <DotIcon size={6} filled={false} color={C.amberDark}/>}
                     </div>
-                    {o.subtitle && (
-                      <div style={{ fontSize:"0.62rem", color:C.text2, marginTop:"0.15rem" }}>
-                        {o.subtitle}
-                      </div>
-                    )}
-                    {o.meta && (
-                      <div style={{ fontSize:"0.6rem", color:C.text3 }}>
-                        {o.meta}
-                      </div>
-                    )}
+                    <span style={{ fontSize:"0.72rem", color:t.status==="ok"?"#AAA":C.text1 }}>{toolLabel[t.tool] || t.tool}</span>
                   </div>
-                  {o.book_url && (
-                    <a href={o.book_url} target="_blank" rel="noopener noreferrer"
-                       style={{ display:"block", textAlign:"center",
-                                padding:"0.25rem", fontSize:"0.62rem",
-                                fontWeight:600, color: i===0 ? C.amberDark : C.text3,
-                                background: i===0 ? C.amberBg : C.bg,
-                                borderTop:`1px solid ${i===0?C.amber:C.border}`,
-                                textDecoration:"none" }}>
-                      Book →
-                    </a>
-                  )}
-                </div>
-              ))}
+                ))
+              }
             </div>
-          )}
-          {travelOptions.length === 0 && (
-            <div style={{ fontSize:"0.72rem", color:C.text3, textAlign:"center",
-                          padding:"1rem 0", marginTop:"0.5rem" }}>
-              No results yet. Start a call and ask to search flights, hotels, or trains.
-            </div>
-          )}
+          </div>
         </div>
 
-        {/* chat */}
+        {/* ── CENTER: Live transcript ── */}
         <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
           <div style={{ display:"flex", alignItems:"center", gap:"0.65rem",
                         padding:"0.65rem 1rem", background:C.surface,
                         borderBottom:`1.5px solid ${C.border}`, flexShrink:0 }}>
-            <div style={{ width:32,height:32,borderRadius:"50%",background:"var(--border)",
-                          display:"flex",alignItems:"center",justifyContent:"center",fontSize:"0.9rem" }}>🧑</div>
+            <div style={{ width:32,height:32,borderRadius:"50%",background:C.amber,
+                          display:"flex",alignItems:"center",justifyContent:"center" }}>
+              <BotIcon size={16} color="#fff"/>
+            </div>
             <div>
-              <div style={{ fontWeight:600, fontSize:"0.85rem" }}>Customer Care Agent</div>
-              <div style={{ fontSize:"0.68rem",
-                            color: sess.wakeActive ? C.green : C.text3,
+              <div style={{ fontWeight:600, fontSize:"0.85rem" }}>AI Resolution Assistant</div>
+              <div style={{ fontSize:"0.68rem", color: sess.wakeActive ? C.green : C.text3,
                             fontWeight: sess.wakeActive ? 700 : 400 }}>
                 {sess.wakeActive ? "PILOT Active" : sess.isListening ? "Standby — say 'Hey Pilot'" : "Connected"}
               </div>
@@ -1025,7 +1297,6 @@ function CustomerCareView() {
             )}
           </div>
 
-          {/* messages = session-scoped transcripts */}
           <div style={{ flex:1, overflowY:"auto", padding:"0.85rem" }}>
             {ts.length===0 && (
               <div style={{ textAlign:"center", color:C.text3, fontSize:"0.82rem", marginTop:"2rem" }}>
@@ -1034,67 +1305,15 @@ function CustomerCareView() {
             )}
             {ts.map((t,i)=>{
               const isAgent = t.speaker==="PILOT" || t.role==="PILOT";
-
-              // ── Travel search result cards (flights, hotels, or trains) ──
-              if (t.results?.length) {
-                const kind = t.service_type || "flights";
-                const icon = kind === "hotels" ? "🏨" : kind === "trains" ? "🚆" : "✈";
-                const options = (t.results as any[]).map((r, fi) => normalizeTravelResult(r, kind, fi, t.origin || "", t.destination || ""));
-                return (
-                  <div key={i} style={{ marginBottom:"1rem", animation:"fadeIn 0.3s ease" }}>
-                    <div style={{ display:"flex", alignItems:"center", gap:"0.4rem", marginBottom:"0.6rem" }}>
-                      <div style={{ width:28,height:28,borderRadius:"50%",background:C.amber,
-                                    display:"flex",alignItems:"center",justifyContent:"center",fontSize:"0.75rem",flexShrink:0 }}>🤖</div>
-                      <span style={{ fontSize:"0.75rem", fontWeight:700, color:C.amberDark }}>
-                        {icon} {t.origin ? `${t.origin} → ${t.destination}` : t.destination} · {t.date || "Today"}
-                      </span>
-                    </div>
-                    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0.5rem", paddingLeft:"0.5rem" }}>
-                      {options.map((o, fi) => (
-                        <div key={fi} style={{ borderRadius:12, overflow:"hidden",
-                                               border:`1.5px solid ${fi===0?C.amber:C.border}`,
-                                               background:fi===0?C.amberBg:C.surface,
-                                               boxShadow:"0 2px 8px rgba(0,0,0,0.05)",
-                                               position:"relative" }}>
-                          {fi===0 && (
-                            <div style={{ position:"absolute", top:0, right:0,
-                                          background:C.amber, color:"#fff",
-                                          fontSize:"0.55rem", fontWeight:800,
-                                          padding:"3px 8px", borderRadius:"0 12px 0 8px" }}>BEST</div>
-                          )}
-                          <div style={{ padding:"0.7rem 0.75rem 0.5rem" }}>
-                            <div style={{ fontWeight:700, fontSize:"0.82rem", marginBottom:"0.15rem" }}>{o.title}</div>
-                            {o.subtitle && <div style={{ fontSize:"0.68rem", color:C.text3, marginBottom:"0.35rem" }}>{o.subtitle}</div>}
-                            {o.meta && <div style={{ fontSize:"0.62rem", color:C.text3 }}>{o.meta}</div>}
-                            {o.price && <div style={{ fontSize:"0.9rem", fontWeight:800, color:C.amberDark, marginTop:"0.4rem" }}>{o.price}</div>}
-                          </div>
-                          {o.book_url && (
-                            <a href={o.book_url} target="_blank" rel="noopener noreferrer"
-                               style={{ display:"flex", alignItems:"center", justifyContent:"center",
-                                        gap:"0.25rem", padding:"0.4rem",
-                                        background:fi===0?C.amberBg:C.bg,
-                                        borderTop:`1px solid ${fi===0?C.amber:C.border}`,
-                                        fontSize:"0.7rem", fontWeight:700,
-                                        color:fi===0?C.amberDark:C.text2,
-                                        textDecoration:"none" }}>
-                              Book Now →
-                            </a>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              }
-
-              // ── Regular chat bubble ──
               return (
                 <div key={i} style={{ display:"flex", justifyContent:isAgent?"flex-start":"flex-end",
                                        marginBottom:"0.7rem", animation:"fadeIn 0.3s ease" }}>
                   {isAgent&&(
                     <div style={{ width:28,height:28,borderRadius:"50%",background:C.amber,
                                   display:"flex",alignItems:"center",justifyContent:"center",
-                                  marginRight:"0.4rem",flexShrink:0,fontSize:"0.75rem" }}>🤖</div>
+                                  marginRight:"0.4rem",flexShrink:0 }}>
+                      <BotIcon size={15} color="#fff"/>
+                    </div>
                   )}
                   <div style={{ maxWidth:"68%", padding:"0.65rem 0.85rem",
                                 background:isAgent?C.surface:C.blue,
@@ -1121,75 +1340,94 @@ function CustomerCareView() {
               );
             })}
             <div ref={endRef}/>
-          </div>
-
-          {/* text input */}
-          <div style={{ display:"flex", gap:"0.6rem", padding:"0.65rem 0.85rem",
-                        background:C.surface, borderTop:`1.5px solid ${C.border}`, flexShrink:0,
-                        alignItems:"flex-end" }}>
-            <button style={{ width:28,height:28,borderRadius:7,background:"var(--amber-bg)",
-                             border:`1.5px solid ${C.border}`,fontSize:"0.9rem",flexShrink:0 }}>+</button>
-            <input value={input} onChange={e=>setInput(e.target.value)}
-              onKeyDown={e=>{
-                if(e.key==="Enter"&&input.trim()){
-                  // local only — doesn't pollute other views
-                  setInput("");
-                }
-              }}
-              style={{ flex:1, padding:"0.55rem 0.8rem", borderRadius:10,
-                       border:`1.5px solid ${C.border}`, fontSize:"0.85rem",
-                       background:"var(--bg2)", outline:"none" }}
-              placeholder="Type a message or command override..."/>
-            <button style={{ padding:"0.55rem 1rem", borderRadius:10, background:C.amberDark,
-                             border:"none", color:"#fff", fontWeight:600, fontSize:"0.85rem" }}>
-              ▶ Send
-            </button>
+            {/* clearance so the last message isn't hidden behind the floating command bar */}
+            <div style={{ height:"4.5rem", flexShrink:0 }}/>
           </div>
         </div>
 
-        {/* task queue */}
-        <div style={{ width:210, background:C.surface, borderLeft:`1.5px solid ${C.border}`,
-                      padding:"0.85rem", overflowY:"auto", flexShrink:0 }}>
-          <div style={{ fontSize:"0.68rem", fontWeight:700, letterSpacing:"0.08em",
-                        color:C.text3, marginBottom:"0.6rem" }}>TASK QUEUE</div>
-          {liveTasks.length === 0
-            ? <div style={{ fontSize:"0.72rem", color:C.text3 }}>No tasks yet. Start a call.</div>
-            : liveTasks.map((t,i)=>(
-              <div key={i} style={{ display:"flex", alignItems:"center", gap:"0.45rem",
-                                     padding:"0.45rem 0.55rem", borderRadius:8, marginBottom:"0.3rem",
-                                     background:t.status==="running"?C.amberBg:"transparent",
-                                     border:`1.5px solid ${t.status==="running"?C.amber:"transparent"}` }}>
-                <div style={{ width:16,height:16,borderRadius:"50%",flexShrink:0,
-                              background:t.status==="ok"?C.green:t.status==="running"?C.amber:"var(--amber-bg)",
-                              display:"flex",alignItems:"center",justifyContent:"center",
-                              fontSize:"0.55rem",color:"#fff" }}>
-                  {t.status==="ok"?"✓":t.status==="running"?"●":"○"}
-                </div>
-                <span style={{ fontSize:"0.74rem", fontWeight:t.status==="running"?600:400,
-                               textDecoration:t.status==="ok"?"line-through":"none",
-                               color:t.status==="ok"?"#AAA":C.text1 }}>
-                  {toolLabel[t.tool] || t.tool}
-                </span>
+        {/* ── RIGHT: Recommendations — KB articles + confidence + escalation ── */}
+        <div style={{ width:280, background:C.surface, borderLeft:`1.5px solid ${C.border}`,
+                      padding:"0.9rem", overflowY:"auto", flexShrink:0, display:"flex",
+                      flexDirection:"column", gap:"0.9rem" }}>
+          {/* Resolution confidence + recommendation */}
+          <div>
+            <div style={panelLabel("")}>RECOMMENDATION</div>
+            <div style={{ marginTop:"0.45rem", borderRadius:12, overflow:"hidden",
+                          border:`1.5px solid ${resolution ? (isEscalate ? "#EF4444" : C.green) : C.border}` }}>
+              <div style={{ padding:"0.85rem", background: resolution ? (isEscalate ? "rgba(239,68,68,0.06)" : "rgba(34,197,94,0.06)") : "var(--bg2)" }}>
+                {resolution ? (
+                  <>
+                    <div style={{ display:"flex", alignItems:"center", gap:"0.5rem", marginBottom:"0.5rem" }}>
+                      {isEscalate
+                        ? <AlertTriangleIcon size={18} color="#EF4444"/>
+                        : <CheckCircleIcon size={18} color={C.green}/>}
+                      <span style={{ fontSize:"0.95rem", fontWeight:800, color:isEscalate?"#EF4444":C.green }}>
+                        {isEscalate ? `Escalate → ${resolution.escalation_target || "L2"}` : "Resolve on call"}
+                      </span>
+                    </div>
+                    {/* Confidence bar */}
+                    <div style={{ display:"flex", justifyContent:"space-between", fontSize:"0.66rem", color:C.text3, marginBottom:"0.2rem" }}>
+                      <span>Resolution confidence</span><span style={{ fontWeight:700 }}>{confPct}%</span>
+                    </div>
+                    <div style={{ height:8, borderRadius:5, background:"var(--bg2)", overflow:"hidden" }}>
+                      <div style={{ height:"100%", width:`${confPct}%`,
+                                    background: (confPct||0) >= 60 ? C.green : (confPct||0) >= 40 ? C.amber : "#EF4444",
+                                    borderRadius:5, transition:"width 0.4s" }}/>
+                    </div>
+                    <p style={{ fontSize:"0.72rem", color:C.text2, lineHeight:1.5, marginTop:"0.6rem" }}>
+                      {resolution.reasoning}
+                    </p>
+                    {isEscalate && resolution.escalation_reasons?.length > 0 && (
+                      <div style={{ marginTop:"0.5rem" }}>
+                        {resolution.escalation_reasons.map((r:string,i:number)=>(
+                          <div key={i} style={{ display:"flex", gap:"0.35rem", fontSize:"0.68rem", color:C.text2, marginBottom:"0.2rem" }}>
+                            <span style={{ color:"#EF4444" }}>•</span>{r}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div style={{ fontSize:"0.74rem", color:C.text3 }}>
+                    Ask <strong style={{color:C.text2}}>"should I escalate this?"</strong> or run an assessment to get a recommendation.
+                  </div>
+                )}
               </div>
-            ))
-          }
-
-          <div style={{ fontSize:"0.68rem", fontWeight:700, letterSpacing:"0.08em",
-                        color:C.text3, margin:"1rem 0 0.6rem" }}>STATUS TIMELINE</div>
-          {timeline.map((s,i)=>(
-            <div key={i} style={{ display:"flex", gap:"0.45rem", marginBottom:"0.65rem" }}>
-              <div style={{ display:"flex", flexDirection:"column", alignItems:"center" }}>
-                <div style={{ width:11,height:11,borderRadius:"50%",flexShrink:0,
-                              background:s.done?C.green:s.active?C.amber:C.border }}/>
-                {i<timeline.length-1&&<div style={{ width:2,height:18,background:C.border }}/>}
-              </div>
-              <div>
-                <div style={{ fontSize:"0.75rem", fontWeight:600,
-                              color:s.active?C.text1:C.text3 }}>{s.l}</div>
-                <div style={{ fontSize:"0.65rem", color:s.active?C.amber:"#AAA" }}>{s.t}</div>
-              </div>
+              {isEscalate && (
+                <button
+                  style={{ width:"100%", padding:"0.6rem", border:"none", cursor:"pointer",
+                           background:"#EF4444", color:"#fff", fontWeight:700, fontSize:"0.78rem",
+                           display:"flex", alignItems:"center", justifyContent:"center", gap:"0.4rem" }}
+                  onClick={()=>{/* placeholder — voice 'escalate this ticket' drives escalate_ticket */}}>
+                  <ArrowRightIcon size={13} color="#fff"/> Create escalation ticket
+                </button>
+              )}
             </div>
-          ))}
+          </div>
+
+          {/* Retrieved KB articles */}
+          <div>
+            <div style={panelLabel("")}>KNOWLEDGE BASE</div>
+            <div style={{ marginTop:"0.45rem", display:"flex", flexDirection:"column", gap:"0.5rem" }}>
+              {resolution?.kb_articles?.length ? resolution.kb_articles.map((a:any,i:number)=>(
+                <div key={i} style={{ borderRadius:10, border:`1.5px solid ${i===0?C.amber:C.border}`,
+                                      background:i===0?C.amberBg:"var(--bg2)", padding:"0.65rem 0.75rem" }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"0.3rem" }}>
+                    <span style={{ fontSize:"0.78rem", fontWeight:700, color:C.text1 }}>{a.title}</span>
+                    <span style={{ fontSize:"0.6rem", fontWeight:700, color:C.amberDark,
+                                   background:C.surface, borderRadius:5, padding:"0.1rem 0.35rem" }}>
+                      {Math.round((a.score||0)*100)}% match
+                    </span>
+                  </div>
+                  <p style={{ fontSize:"0.68rem", color:C.text2, lineHeight:1.5, margin:0 }}>{a.excerpt}</p>
+                </div>
+              )) : (
+                <div style={{ fontSize:"0.72rem", color:C.text3 }}>
+                  Relevant troubleshooting procedures will appear here as the issue is understood.
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1211,7 +1449,10 @@ function ConfirmOverlay() {
                   display:"flex",alignItems:"center",justifyContent:"center",zIndex:200 }}>
       <div style={{ background:C.surface,borderRadius:16,padding:"1.75rem",maxWidth:380,width:"90%",
                     boxShadow:"0 8px 40px rgba(0,0,0,0.12)" }}>
-        <div style={{ fontSize:"1rem",fontWeight:700,marginBottom:"0.4rem" }}>⚠ Confirm Action</div>
+        <div style={{ fontSize:"1rem",fontWeight:700,marginBottom:"0.4rem",
+                      display:"flex", alignItems:"center", gap:"0.45rem" }}>
+          <AlertTriangleIcon size={18} color="#F59E0B"/> Confirm Action
+        </div>
         <p style={{ color:C.text2, fontSize:"0.88rem", marginBottom:"1.25rem" }}>
           {store.confirmPrompt.message}
         </p>
@@ -1234,13 +1475,11 @@ export function Dashboard() {
   const page = useAppStore(s=>s.page) as string;
   return (
     <div style={{ display:"flex", height:"100vh", overflow:"hidden", background:C.bg }}>
-      <Sidebar active={page==="ppt"?"ppt":page==="care"?"care":page==="guidelines"?"guidelines":page==="about"?"about":"dashboard"}/>
-      {page==="ppt"        ? <PPTPageView/> :
-       page==="care"       ? <CustomerCareView/> :
-       page==="guidelines" ? <GuidelinePageView/> :
-       page==="about"      ? <AboutPageView/> :
-       page==="profile"    ? <ProfilePage/> :
-       page==="settings"   ? <SettingsPage/> :
+      <Sidebar active={page==="ppt"?"ppt":page==="care"?"care":page==="about"?"about":"dashboard"}/>
+      {page==="ppt"     ? <PPTPageView/> :
+       page==="care"    ? <CustomerCareView/> :
+       page==="about"   ? <AboutPageView/> :
+       page==="profile" ? <ProfilePage/> :
        <MainDashboard/>}
       <ConfirmOverlay/>
     </div>
@@ -1248,158 +1487,49 @@ export function Dashboard() {
 }
 
 
-/* ── Guidelines ── */
-function GuidelinePageView() {
-  const sections = [
-    {
-      icon: "🖥",
-      title: "PPT COPILOT SYSTEM",
-      color: C.amberDark,
-      accentBg: C.amberBg,
-      desc: "Controls, navigates, and analyzes presentations in real time — hands-free voice control over your deck.",
-      commands: [
-        { spoken: "go to slide 5",            action: "Jumps the viewer directly to slide 5 (0-indexed internally)." },
-        { spoken: "next slide / prev slide",   action: "Steps forward or backward through the presentation deck." },
-        { spoken: "summarize this slide",      action: "Verbally summarizes bullet points and shapes on the current slide." },
-        { spoken: "delete slide 10",           action: "Navigates to slide 10 and triggers the confirmation popup (admin only)." },
-      ],
-      details: "The PPT Copilot renders PPTX decks to high-fidelity PNG frames on-the-fly via an SSE stream renderer. Slide navigation uses a fast-path regex that bypasses the LLM for deterministic zero-latency jumps. Destructive commands (delete/remove) bypass the fast path and are RBAC-gated — only admin role (Level 4) may confirm deletion.",
-    },
-    {
-      icon: "🎧",
-      title: "CUSTOMER CARE & TRAVEL PLANNER",
-      color: "#2563EB",
-      accentBg: "color-mix(in srgb, #2563EB 8%, var(--bg))",
-      desc: "Natural-language flight, hotel, and train search plus customer care ticketing — results appear as inline cards in the conversation.",
-      commands: [
-        { spoken: "search flights from Mumbai to Delhi on 2026-07-01", action: "Backend lookup → inline card with airlines, fares, departure times, and a booking link." },
-        { spoken: "find hotels in Mumbai",                             action: "Returns hotel cards with name, location, price, and contact number for the given city." },
-        { spoken: "trains from Delhi to Mumbai",                       action: "Returns train cards with operator, departure time, and contact number for the route." },
-        { spoken: "create ticket / open ticket",                       action: "Opens a new support ticket and logs the synopsis from your spoken description." },
-        { spoken: "look up customer / CRM",                            action: "Pulls the customer record from CRM by name or context in the conversation." },
-      ],
-      details: "Travel results are rendered as interactive inline cards — not raw text — so options stay readable without cluttering the transcript. Flights, hotels, and trains share one tool (travel_search) that infers the service type from your phrasing; hotels and trains need only one city, flights need both origin and destination. Parameters are extracted via regex from natural speech; 'tomorrow' and 'today' resolve automatically. Booking (flight_book) remains flight-specific. Ticket and CRM tools follow the same queue/interrupt concurrency model as all other PILOT tools.",
-    },
-  ];
-
-  return (
-    <div style={{ flex:1, display:"flex", flexDirection:"column", background:C.bg, overflow:"hidden" }}>
-      {/* Header */}
-      <div style={{ padding:"1.5rem 2.5rem", background:C.surface,
-                    borderBottom:`1.5px solid ${C.border}`, flexShrink:0 }}>
-        <div style={{ display:"flex", alignItems:"center", gap:"0.6rem", marginBottom:"0.25rem" }}>
-          <span style={{ fontSize:"1.25rem" }}>📋</span>
-          <h1 style={{ fontWeight:800, fontSize:"1.4rem", letterSpacing:"-0.02em", color:C.text1, margin:0 }}>
-            System Guidelines & Operator Manual
-          </h1>
-        </div>
-        <p style={{ fontSize:"0.85rem", color:C.text3, margin:0 }}>
-          Operational reference for PILOT's active Voice AI pipeline modules.
-        </p>
-      </div>
-
-      {/* Scrollable body */}
-      <div style={{ flex:1, overflowY:"auto", padding:"2rem 2.5rem 5rem",
-                    display:"flex", flexDirection:"column", gap:"2rem" }}>
-
-        {/* System overview card */}
-        <div style={{ background:C.surface, borderRadius:14, padding:"1.5rem",
-                      border:`1.5px solid ${C.border}` }}>
-          <h2 style={{ fontSize:"1rem", fontWeight:700, marginBottom:"0.5rem", color:C.text1 }}>
-            System Overview
-          </h2>
-          <p style={{ fontSize:"0.87rem", color:C.text2, lineHeight:1.65, margin:0 }}>
-            PILOT is a fully local-first Voice AI Operating System that orchestrates complex task
-            workflows through raw voice input. It combines continuous audio streaming,{" "}
-            <strong style={{ color:C.text1 }}>unsupervised diarization</strong>,{" "}
-            <strong style={{ color:C.text1 }}>biometric RBAC</strong>, and{" "}
-            <strong style={{ color:C.text1 }}>real-time tool calling</strong> to act as a seamless
-            extension of your desktop environment.
-          </p>
-        </div>
-
-        {/* Feature sections */}
-        {sections.map((sec, idx) => (
-          <div key={idx} style={{ background:C.surface, borderRadius:16,
-                                  border:`1.5px solid ${C.border}`, overflow:"hidden" }}>
-            {/* Section header */}
-            <div style={{ background:sec.accentBg, padding:"1.25rem 1.5rem",
-                          borderBottom:`1.5px solid ${C.border}`,
-                          display:"flex", alignItems:"flex-start", gap:"0.75rem" }}>
-              <span style={{ fontSize:"1.4rem", lineHeight:1 }}>{sec.icon}</span>
-              <div>
-                <div style={{ fontSize:"0.82rem", fontWeight:800, color:sec.color,
-                              letterSpacing:"0.06em", marginBottom:"0.2rem" }}>
-                  {sec.title}
-                </div>
-                <p style={{ fontSize:"0.82rem", color:C.text1, margin:0, fontWeight:500, lineHeight:1.5 }}>
-                  {sec.desc}
-                </p>
-              </div>
-            </div>
-
-            {/* Body: mechanics then triggers stacked */}
-            <div style={{ padding:"1.5rem 1.75rem", display:"flex", flexDirection:"column", gap:"1.5rem" }}>
-              {/* Pipeline mechanics — full width */}
-              <div>
-                <h3 style={{ fontSize:"0.72rem", fontWeight:700, textTransform:"uppercase",
-                             color:C.text3, marginBottom:"0.6rem", letterSpacing:"0.07em" }}>
-                  Pipeline Mechanics
-                </h3>
-                <p style={{ fontSize:"0.84rem", color:C.text2, lineHeight:1.7, margin:0 }}>
-                  {sec.details}
-                </p>
-              </div>
-
-              {/* Divider */}
-              <div style={{ borderTop:`1px dashed ${C.border}` }}/>
-
-              {/* Voice triggers — 2-column card grid */}
-              <div>
-                <h3 style={{ fontSize:"0.72rem", fontWeight:700, textTransform:"uppercase",
-                             color:C.text3, marginBottom:"0.75rem", letterSpacing:"0.07em" }}>
-                  Voice Triggers
-                </h3>
-                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0.85rem" }}>
-                  {sec.commands.map((cmd, cIdx) => (
-                    <div key={cIdx} style={{ background:C.bg, padding:"0.9rem 1.1rem",
-                                            borderRadius:10, border:`1px solid ${C.border}` }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:"0.4rem", marginBottom:"0.35rem" }}>
-                        <span style={{ fontSize:"0.82rem" }}>🗣</span>
-                        <span style={{ fontSize:"0.78rem", fontWeight:700, color:C.text1,
-                                      fontFamily:"monospace" }}>
-                          "{cmd.spoken}"
-                        </span>
-                      </div>
-                      <p style={{ fontSize:"0.74rem", color:C.text2, lineHeight:1.55, margin:0 }}>
-                        {cmd.action}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
-
-      </div>
-    </div>
-  );
-}
-
-/* ── About ── */
+/* ── About — a single knowledge-base page: what PILOT is, what it can do,
+   and the full spoken-command reference for every module. Merges what used
+   to be a separate About page and Guidelines page into one destination. ── */
 function AboutPageView() {
   const capabilities = [
-    { icon:"🖥", title:"PPT Copilot",       desc:"Upload a deck and control it hands-free — navigate slides, summarize content, edit text and speaker notes, and generate notes for an entire presentation, all by voice." },
-    { icon:"🎧", title:"Customer Care",     desc:"Look up customers in CRM, search the knowledge base, and open, update, or close support tickets without touching a keyboard." },
-    { icon:"✈️", title:"Travel Planner",    desc:"Search flights, hotels, and trains in natural language — results come back as inline cards with fares, timings, and booking links." },
-    { icon:"🔒", title:"Voice Identity",    desc:"Every speaker is diarized and matched against an enrolled voice profile, so PILOT knows who's talking and enforces role-based permissions automatically." },
+    { Icon:MonitorIcon, title:"PPT Copilot",         desc:"Upload a deck and control it hands-free — navigate slides, summarize content, edit text and speaker notes, and generate notes for an entire presentation, all by voice." },
+    { Icon:HeadsetIcon, title:"Customer Resolution", desc:"A live-call assistant for support reps: detects customer sentiment and frustration, retrieves the right knowledge-base procedures, and recommends whether to resolve on the call or escalate — with the reasons why." },
+    { Icon:AlertTriangleIcon, title:"Escalation Engine", desc:"Fuses frustration, outage duration, repeated failures, and knowledge-base coverage into a resolution-confidence score and an explainable escalate-or-resolve recommendation the rep can act on." },
+    { Icon:LockIcon,    title:"Voice Identity",       desc:"Every speaker is diarized and matched against an enrolled voice profile, so PILOT knows who's talking and enforces role-based permissions automatically." },
   ];
 
   const principles = [
-    { icon:"🏠", title:"Local-first",    desc:"Speech recognition, diarization, and the routing model all run on-device via Ollama and local Whisper — your voice never has to leave the machine to get a response." },
-    { icon:"⚡", title:"Low latency",    desc:"A fast deterministic keyword path handles common commands instantly; only ambiguous requests fall through to the LLM classifier." },
-    { icon:"🛡️", title:"Safety-gated",   desc:"Destructive actions (like deleting a slide) require an explicit spoken confirmation and are restricted by role before they ever execute." },
+    { Icon:HomeIcon,   title:"Local-first",  desc:"Speech recognition, diarization, and the routing model all run on-device via Ollama and local Whisper — your voice never has to leave the machine to get a response." },
+    { Icon:ZapIcon,    title:"Low latency",  desc:"A fast deterministic keyword path handles common commands instantly; only ambiguous requests fall through to the LLM classifier." },
+    { Icon:ShieldIcon, title:"Safety-gated", desc:"Destructive actions (like deleting a slide) require an explicit spoken confirmation and are restricted by role before they ever execute." },
+  ];
+
+  const modules = [
+    {
+      Icon: MonitorIcon,
+      title: "PPT Copilot",
+      desc: "Controls, navigates, and analyzes presentations in real time — hands-free voice control over your deck.",
+      commands: [
+        { spoken: "go to slide 5",            action: "Jumps the viewer directly to slide 5." },
+        { spoken: "next slide / prev slide",   action: "Steps forward or backward through the deck." },
+        { spoken: "summarize this slide",      action: "Verbally summarizes bullet points and shapes on the current slide." },
+        { spoken: "delete slide 10",           action: "Navigates to slide 10 and asks for confirmation (admin only)." },
+      ],
+      details: "Slide navigation is instant — a fast-path shortcut skips the AI classifier entirely for simple jumps. Deleting a slide always requires spoken confirmation and is restricted to admin accounts.",
+    },
+    {
+      Icon: HeadsetIcon,
+      title: "Customer Resolution & Escalation",
+      desc: "A live-call co-pilot for support reps — sentiment detection, knowledge-base retrieval, and an escalate-or-resolve recommendation, all surfaced on the CSR dashboard.",
+      commands: [
+        { spoken: "should I escalate this?",       action: "Runs a full assessment: confidence score, escalate/resolve recommendation, and the reasons — shown on the dashboard." },
+        { spoken: "what's the recommendation?",    action: "Same assessment, phrased as a direct answer for the rep." },
+        { spoken: "search the knowledge base for the modem lights", action: "Semantic KB retrieval — returns the matching troubleshooting procedures with a match score." },
+        { spoken: "create a ticket",               action: "Opens a new support ticket from the spoken description." },
+        { spoken: "escalate this ticket to L2",    action: "Creates an escalation ticket tagged with priority and target tier." },
+      ],
+      details: "Customer sentiment and frustration are scored on every turn by a sentiment model. A resolution engine blends those signals with outage duration, repeated failures, prior contacts, and knowledge-base coverage — deterministic rules set an escalation floor, then an LLM writes the human-readable reasoning. The rep sees a live sentiment meter, an AI issue summary, matched KB articles, a confidence score, and a clear resolve-or-escalate call.",
+    },
   ];
 
   return (
@@ -1407,20 +1537,20 @@ function AboutPageView() {
       {/* Header */}
       <div style={{ padding:"1.5rem 2.5rem", background:C.surface,
                     borderBottom:`1.5px solid ${C.border}`, flexShrink:0 }}>
-        <div style={{ display:"flex", alignItems:"center", gap:"0.6rem", marginBottom:"0.25rem" }}>
-          <span style={{ fontSize:"1.25rem" }}>ℹ️</span>
+        <div style={{ display:"flex", alignItems:"center", gap:"0.65rem", marginBottom:"0.25rem" }}>
+          <InfoIcon size={20} color={C.amberDark}/>
           <h1 style={{ fontWeight:800, fontSize:"1.4rem", letterSpacing:"-0.02em", color:C.text1, margin:0 }}>
             About PILOT
           </h1>
         </div>
         <p style={{ fontSize:"0.85rem", color:C.text3, margin:0 }}>
-          What PILOT is, what it can do, and how it's built to work.
+          What PILOT is, what it can do, and every spoken command it understands.
         </p>
       </div>
 
       {/* Scrollable body */}
       <div style={{ flex:1, overflowY:"auto", padding:"2rem 2.5rem 5rem",
-                    display:"flex", flexDirection:"column", gap:"2rem" }}>
+                    display:"flex", flexDirection:"column", gap:"2.25rem" }}>
 
         {/* Intro card */}
         <div style={{ background:C.amberBg, borderRadius:14, padding:"1.75rem",
@@ -1446,8 +1576,8 @@ function AboutPageView() {
             {capabilities.map((c, i) => (
               <div key={i} style={{ background:C.surface, borderRadius:14, padding:"1.25rem",
                                     border:`1.5px solid ${C.border}` }}>
-                <div style={{ display:"flex", alignItems:"center", gap:"0.5rem", marginBottom:"0.5rem" }}>
-                  <span style={{ fontSize:"1.15rem" }}>{c.icon}</span>
+                <div style={{ display:"flex", alignItems:"center", gap:"0.6rem", marginBottom:"0.5rem" }}>
+                  <c.Icon size={17} color={C.amberDark} strokeWidth={1.8}/>
                   <span style={{ fontSize:"0.88rem", fontWeight:700, color:C.text1 }}>{c.title}</span>
                 </div>
                 <p style={{ fontSize:"0.82rem", color:C.text2, lineHeight:1.6, margin:0 }}>
@@ -1468,7 +1598,7 @@ function AboutPageView() {
               <div key={i} style={{ background:C.surface, borderRadius:12, padding:"1rem 1.25rem",
                                     border:`1.5px solid ${C.border}`,
                                     display:"flex", alignItems:"flex-start", gap:"0.85rem" }}>
-                <span style={{ fontSize:"1.1rem", flexShrink:0 }}>{p.icon}</span>
+                <p.Icon size={17} color={C.amberDark} strokeWidth={1.8} style={{ marginTop:"0.1rem" }}/>
                 <div>
                   <div style={{ fontSize:"0.85rem", fontWeight:700, color:C.text1, marginBottom:"0.2rem" }}>
                     {p.title}
@@ -1482,24 +1612,54 @@ function AboutPageView() {
           </div>
         </div>
 
-        {/* Pointer to full docs */}
-        <div style={{ background:C.surface, borderRadius:14, padding:"1.25rem 1.5rem",
-                      border:`1.5px dashed ${C.border}`,
-                      display:"flex", alignItems:"center", justifyContent:"space-between", gap:"1rem" }}>
-          <div>
-            <div style={{ fontSize:"0.85rem", fontWeight:700, color:C.text1, marginBottom:"0.2rem" }}>
-              Want the full command reference?
-            </div>
-            <p style={{ fontSize:"0.78rem", color:C.text3, margin:0 }}>
-              The Guidelines page lists every spoken command PILOT understands, module by module.
-            </p>
+        {/* Command reference */}
+        <div>
+          <h2 style={{ fontSize:"1rem", fontWeight:700, marginBottom:"0.3rem", color:C.text1 }}>
+            Command reference
+          </h2>
+          <p style={{ fontSize:"0.82rem", color:C.text3, marginBottom:"1rem" }}>
+            Every spoken command PILOT understands, grouped by module.
+          </p>
+          <div style={{ display:"flex", flexDirection:"column", gap:"1.25rem" }}>
+            {modules.map((mod, idx) => (
+              <div key={idx} style={{ background:C.surface, borderRadius:14,
+                                      border:`1.5px solid ${C.border}`, overflow:"hidden" }}>
+                <div style={{ padding:"1.1rem 1.4rem", borderBottom:`1.5px solid ${C.border}`,
+                              display:"flex", alignItems:"flex-start", gap:"0.75rem" }}>
+                  <mod.Icon size={18} color={C.amberDark} strokeWidth={1.8} style={{ marginTop:"0.1rem" }}/>
+                  <div>
+                    <div style={{ fontSize:"0.88rem", fontWeight:700, color:C.text1, marginBottom:"0.15rem" }}>
+                      {mod.title}
+                    </div>
+                    <p style={{ fontSize:"0.8rem", color:C.text2, margin:0, lineHeight:1.5 }}>
+                      {mod.desc}
+                    </p>
+                  </div>
+                </div>
+
+                <div style={{ padding:"1.25rem 1.4rem", display:"flex", flexDirection:"column", gap:"1.25rem" }}>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0.75rem" }}>
+                    {mod.commands.map((cmd, cIdx) => (
+                      <div key={cIdx} style={{ background:C.bg, padding:"0.8rem 1rem",
+                                              borderRadius:10, border:`1px solid ${C.border}` }}>
+                        <div style={{ fontSize:"0.76rem", fontWeight:700, color:C.text1,
+                                      fontFamily:"monospace", marginBottom:"0.3rem" }}>
+                          "{cmd.spoken}"
+                        </div>
+                        <p style={{ fontSize:"0.73rem", color:C.text2, lineHeight:1.5, margin:0 }}>
+                          {cmd.action}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                  <p style={{ fontSize:"0.78rem", color:C.text3, lineHeight:1.6, margin:0,
+                              borderTop:`1px dashed ${C.border}`, paddingTop:"0.9rem" }}>
+                    {mod.details}
+                  </p>
+                </div>
+              </div>
+            ))}
           </div>
-          <button onClick={() => useAppStore.getState().setPage("guidelines")}
-            style={{ padding:"0.55rem 1.1rem", borderRadius:8, border:"none",
-                     background:C.amber, color:"#fff", fontWeight:600,
-                     fontSize:"0.8rem", cursor:"pointer", flexShrink:0 }}>
-            Open Guidelines →
-          </button>
         </div>
 
       </div>

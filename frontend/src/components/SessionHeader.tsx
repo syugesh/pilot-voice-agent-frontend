@@ -6,6 +6,10 @@
  */
 import React, { useState, useRef, useEffect } from "react";
 import { useAppStore } from "../store/SessionStore";
+import {
+  CheckIcon, CheckCircleIcon, ArrowLeftIcon, ArrowRightIcon, MicIcon, StopIcon,
+  ZapIcon, LockIcon, MailIcon, DotIcon, IconBadge,
+} from "./Icons";
 
 const C = {
   amber:     "#F5A700",
@@ -91,8 +95,8 @@ function StrengthBar({ pw }: { pw: string }) {
             <div style={{ width:14, height:14, borderRadius:"50%", flexShrink:0,
                           background: r.ok ? C.green : C.border,
                           display:"flex", alignItems:"center", justifyContent:"center",
-                          fontSize:"0.55rem", color:"#fff", fontWeight:700 }}>
-              {r.ok ? "✓" : ""}
+                          color:"#fff", fontWeight:700 }}>
+              {r.ok ? <CheckIcon size={9} strokeWidth={3}/> : null}
             </div>
             <span style={{ fontSize:"0.72rem", color: r.ok ? C.text2 : C.text3 }}>{r.label}</span>
           </div>
@@ -372,11 +376,11 @@ export function LandingPage() {
           </div>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:"1.25rem" }}>
             {[
-              { title:"Customer Service",
-                desc:"Agents automatically look up records, surface knowledge base answers, and draft responses — all while the agent stays fully present in the conversation.",
+              { title:"Customer Resolution",
+                desc:"A live-call co-pilot for support reps — detects customer frustration, retrieves the right troubleshooting procedures, and recommends resolve-or-escalate with the reasons, all while the rep stays present in the conversation.",
                 live:true },
-              { title:"Travel Planner",
-                desc:"Voice-triggered flight, hotel, and train search plus flight booking workflows. Just say where you want to go.",
+              { title:"Escalation Intelligence",
+                desc:"Fuses sentiment, outage duration, repeated failures, and knowledge-base coverage into a resolution-confidence score and an explainable escalation recommendation.",
                 live:true },
               { title:"Presentation Control",
                 desc:"Navigate slides, jump to sections, and get AI summaries of decks using only your voice during live presentations.",
@@ -472,7 +476,7 @@ function LoginPage() {
         <button onClick={()=>store.setPage("landing")}
           style={{ position:"absolute",top:"1rem",left:"1rem",background:"none",border:"none",
                    color:C.text3,cursor:"pointer",fontSize:"0.85rem",display:"flex",
-                   alignItems:"center",gap:"0.3rem" }}>← Back</button>
+                   alignItems:"center",gap:"0.3rem" }}><ArrowLeftIcon size={13}/> Back</button>
 
         <div style={{ textAlign:"center", marginBottom:"1.75rem" }}>
           <img src="/logo.png" alt="PILOT"
@@ -569,7 +573,7 @@ function ForgotPasswordPage() {
         <button onClick={()=>store.setPage("login")}
           style={{ position:"absolute",top:"1rem",left:"1rem",background:"none",border:"none",
                    color:C.text3,cursor:"pointer",fontSize:"0.85rem",display:"flex",
-                   alignItems:"center",gap:"0.3rem" }}>← Back</button>
+                   alignItems:"center",gap:"0.3rem" }}><ArrowLeftIcon size={13}/> Back</button>
 
         <div style={{ textAlign:"center", marginBottom:"1.75rem" }}>
           <img src="/logo.png" alt="PILOT"
@@ -660,8 +664,9 @@ function ForgotPasswordPage() {
             <div style={{ display:"flex", flexDirection:"column", alignItems:"center",
                           justifyContent:"center", padding:"1rem 0 1.5rem", gap:"0.75rem" }}>
               <div style={{ width:60, height:60, borderRadius:"50%", background:"#DCFCE7",
-                            display:"flex", alignItems:"center", justifyContent:"center",
-                            fontSize:"1.6rem", color:C.green }}>✓</div>
+                            display:"flex", alignItems:"center", justifyContent:"center" }}>
+                <CheckIcon size={28} color={C.green} strokeWidth={2.5}/>
+              </div>
             </div>
             <button onClick={()=>store.setPage("login")}
               style={{ width:"100%",padding:"0.85rem",borderRadius:10,background:C.amberDark,
@@ -805,7 +810,7 @@ function SignupPage() {
                    background: "none", border: "none", color: C.text3,
                    cursor: "pointer", fontSize: "0.85rem",
                    display: "flex", alignItems: "center", gap: "0.3rem" }}>
-          ← Back
+          <ArrowLeftIcon size={13}/> Back
         </button>
 
         {/* 2-step indicator */}
@@ -903,8 +908,9 @@ function SignupPage() {
               <div style={{ display:"flex", flexDirection:"column", alignItems:"center",
                             justifyContent:"center", paddingTop:"3.5rem", gap:"0.75rem" }}>
                 <div style={{ width:60, height:60, borderRadius:"50%", background:"#DCFCE7",
-                              display:"flex", alignItems:"center", justifyContent:"center",
-                              fontSize:"1.6rem", color:C.green }}>✓</div>
+                              display:"flex", alignItems:"center", justifyContent:"center" }}>
+                  <CheckIcon size={28} color={C.green} strokeWidth={2.5}/>
+                </div>
                 <div style={{ fontWeight:700, color:C.green, fontSize:"1rem" }}>Voice enrolled!</div>
                 <div style={{ fontSize:"0.8rem", color:C.text3, textAlign:"center" }}>
                   All 3 rounds captured. Ready to submit.
@@ -940,10 +946,11 @@ function SignupPage() {
                   <button onClick={vcPhase==="recording" ? handleVcStop : startVcRec}
                     style={{ width:54, height:54, borderRadius:"50%",
                              background: vcPhase==="recording" ? "#EF4444" : C.amberDark,
-                             border:"none", fontSize:"1.2rem", color:"#fff", cursor:"pointer",
+                             border:"none", color:"#fff", cursor:"pointer",
+                             display:"flex", alignItems:"center", justifyContent:"center",
                              boxShadow: vcPhase==="recording" ? "0 0 0 8px rgba(239,68,68,0.15)" : "none",
                              transition:"all 0.2s" }}>
-                    {vcPhase==="recording" ? "⏹" : "🎤"}
+                    {vcPhase==="recording" ? <StopIcon size={18}/> : <MicIcon size={20}/>}
                   </button>
 
                   <div style={{ display:"flex", alignItems:"flex-end", gap:3, height:24 }}>
@@ -964,8 +971,10 @@ function SignupPage() {
                     <button onClick={handleVcNext}
                       style={{ padding:"0.5rem 1.25rem", borderRadius:10,
                                background:C.amber, border:"none", color:"#fff",
-                               fontWeight:600, fontSize:"0.82rem", cursor:"pointer" }}>
-                      {vcRound < 3 ? `Continue to Round ${vcRound+1} →` : "Finish Enrollment →"}
+                               fontWeight:600, fontSize:"0.82rem", cursor:"pointer",
+                               display:"flex", alignItems:"center", gap:"0.4rem" }}>
+                      {vcRound < 3 ? `Continue to Round ${vcRound+1}` : "Finish Enrollment"}
+                      <ArrowRightIcon size={13} color="#fff"/>
                     </button>
                   )}
                   {vcErr && <div style={{ color:C.red, fontSize:"0.75rem" }}>{vcErr}</div>}
@@ -1096,7 +1105,7 @@ function OTPPage() {
                               background: s.done ? C.green : C.amber,
                               display:"flex", alignItems:"center", justifyContent:"center",
                               fontSize:"0.9rem", fontWeight:700, color:"#fff" }}>
-                  {s.done ? "✓" : s.n}
+                  {s.done ? <CheckIcon size={15} strokeWidth={3}/> : s.n}
                 </div>
                 <span style={{ fontSize:"0.65rem", fontWeight: s.done?500:700,
                                color: s.done ? C.text3 : C.amberDark }}>{s.l}</span>
@@ -1108,7 +1117,9 @@ function OTPPage() {
 
         <div style={{ width:50, height:50, borderRadius:14, background:C.amberBg,
                       display:"flex", alignItems:"center", justifyContent:"center",
-                      fontSize:"1.4rem", margin:"0 auto 1rem" }}>✈</div>
+                      margin:"0 auto 1rem" }}>
+          <MailIcon size={24} color={C.amberDark}/>
+        </div>
         <h2 style={{ fontSize:"1.5rem", fontWeight:800, marginBottom:"0.25rem" }}>Check your email</h2>
         <p style={{ color:C.text3, fontSize:"0.85rem", marginBottom:"1rem" }}>
           We sent a 6-digit code to <strong>{store.pendingEmail}</strong>
@@ -1155,8 +1166,9 @@ function OTPPage() {
                    color: expired ? C.text3 : "#fff",
                    fontWeight:700, border:"none",
                    cursor: expired ? "not-allowed" : "pointer",
-                   opacity: loading ? 0.7 : 1, fontSize:"0.92rem" }}>
-          {loading ? "Verifying…" : "Verify & Continue →"}
+                   opacity: loading ? 0.7 : 1, fontSize:"0.92rem",
+                   display:"flex", alignItems:"center", justifyContent:"center", gap:"0.4rem" }}>
+          {loading ? "Verifying…" : <>Verify & Continue <ArrowRightIcon size={14} color={expired ? C.text3 : "#fff"}/></>}
         </button>
 
         <p style={{ fontSize:"0.8rem", color:C.text3, marginTop:"1rem" }}>
@@ -1219,8 +1231,9 @@ function ChooseRolePage() {
           style={{ width:"100%",padding:"0.85rem",borderRadius:10,background:C.amberDark,
                    color:"#fff",fontWeight:700,border:"none",
                    fontSize:"0.92rem",cursor:"pointer",
-                   opacity:loading?0.7:1 }}>
-          {loading?"Saving…":"Continue →"}
+                   opacity:loading?0.7:1,
+                   display:"flex", alignItems:"center", justifyContent:"center", gap:"0.4rem" }}>
+          {loading?"Saving…":<>Continue <ArrowRightIcon size={14} color="#fff"/></>}
         </button>
       </div>
     </div>
@@ -1354,7 +1367,10 @@ function VoiceCalibration() {
     <div style={{ minHeight:"100vh", background:C.bg, display:"flex",
                   flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"2rem" }}>
       <div style={{ color:C.amberDark,fontSize:"0.78rem",fontWeight:700,
-                    letterSpacing:"0.06em",marginBottom:"0.4rem" }}>⚡ STEP 4 OF 4</div>
+                    letterSpacing:"0.06em",marginBottom:"0.4rem",
+                    display:"flex", alignItems:"center", gap:"0.35rem" }}>
+        <ZapIcon size={12} strokeWidth={2.2}/> STEP 4 OF 4
+      </div>
       <h2 style={{ fontSize:"1.9rem",fontWeight:900,marginBottom:"0.4rem" }}>Voice Calibration</h2>
       <p style={{ color:C.text3,textAlign:"center",maxWidth:480,marginBottom:"1.75rem",fontSize:"0.88rem" }}>
         Please read the following text naturally. This allows PILOT to build a secure biometric model of your voice.
@@ -1405,10 +1421,11 @@ function VoiceCalibration() {
           <button onClick={phase==="recording"?handleStop:startRec}
             style={{ width:58,height:58,borderRadius:"50%",
                      background:phase==="recording"?"#EF4444":C.amberDark,
-                     border:"none",fontSize:"1.3rem",color:"#fff",cursor:"pointer",
+                     border:"none",color:"#fff",cursor:"pointer",
+                     display:"flex", alignItems:"center", justifyContent:"center",
                      boxShadow:phase==="recording"?"0 0 0 8px rgba(239,68,68,0.15)":"none",
                      transition:"all 0.2s" }}>
-            {phase==="recording"?"⏹":"🎤"}
+            {phase==="recording"?<StopIcon size={20}/>:<MicIcon size={22}/>}
           </button>
           <div style={{ display:"flex",alignItems:"flex-end",gap:"3px",height:24 }}>
             {bars.map((h,i)=>(
@@ -1416,10 +1433,11 @@ function VoiceCalibration() {
                                     height:phase==="recording"?h:3,transition:"height 0.1s" }}/>
             ))}
           </div>
-          <div style={{ fontSize:"0.78rem",color:C.text3 }}>
+          <div style={{ fontSize:"0.78rem",color:C.text3,
+                        display:"flex", alignItems:"center", gap:"0.3rem" }}>
             {phase==="idle"?`Tap mic to start Round ${round}`:
              phase==="recording"?"Recording… read both passages above":
-             `Round ${round} captured ✓`}
+             <>Round {round} captured <CheckIcon size={11} color={C.green} strokeWidth={3}/></>}
           </div>
           {phase!=="idle"&&(
             <div style={{ width:"100%",marginTop:"0.2rem" }}>
@@ -1437,8 +1455,9 @@ function VoiceCalibration() {
           {phase==="done"&&(
             <button onClick={nextRound}
               style={{ padding:"0.55rem 1.4rem",borderRadius:10,background:C.amber,
-                       border:"none",color:"#fff",fontWeight:600,fontSize:"0.85rem",cursor:"pointer" }}>
-              {loading?"Saving…":(round<3?`Continue to Round ${round+1} →`:"Complete Enrollment →")}
+                       border:"none",color:"#fff",fontWeight:600,fontSize:"0.85rem",cursor:"pointer",
+                       display:"flex", alignItems:"center", gap:"0.4rem" }}>
+              {loading?"Saving…":<>{round<3?`Continue to Round ${round+1}`:"Complete Enrollment"} <ArrowRightIcon size={13} color="#fff"/></>}
             </button>
           )}
         </div>
@@ -1448,10 +1467,10 @@ function VoiceCalibration() {
             <React.Fragment key={i}>
               <div style={{ display:"flex",flexDirection:"column",alignItems:"center",gap:"0.25rem" }}>
                 <div style={{ width:30,height:30,borderRadius:"50%",display:"flex",
-                              alignItems:"center",justifyContent:"center",fontSize:"0.8rem",
+                              alignItems:"center",justifyContent:"center",
                               background:ph.done?C.green:"#E5E2DA",
                               color:ph.done?"#fff":"#AAA" }}>
-                  {ph.done?"✓":"···"}
+                  {ph.done ? <CheckIcon size={13} strokeWidth={3}/> : <DotIcon size={5} color="#AAA"/>}
                 </div>
                 <div style={{ fontSize:"0.62rem",textAlign:"center",whiteSpace:"pre-line",
                               color:ph.done?C.text1:"#AAA",fontWeight:500 }}>{ph.l}</div>
@@ -1472,15 +1491,16 @@ function VoiceCalibration() {
           <div style={{ display:"flex",alignItems:"center",gap:"0.35rem",
                         padding:"0.35rem 0.9rem",background:"var(--amber-bg)",borderRadius:20,
                         fontSize:"0.75rem",color:C.text2 }}>
-            🔒 ID: {voiceId}
+            <LockIcon size={11}/> ID: {voiceId}
           </div>
         )}
         <button onClick={submit} disabled={loading}
           style={{ padding:"0.6rem 1.5rem",borderRadius:10,border:"none",
                    background:phase==="done"?C.amberDark:"#E5E2DA",
                    color:phase==="done"?"#fff":"#AAA",
-                   fontWeight:600,fontSize:"0.88rem",cursor:"pointer" }}>
-          {loading?"Saving…":voiceId?"Done ✓":"Finish"}
+                   fontWeight:600,fontSize:"0.88rem",cursor:"pointer",
+                   display:"flex", alignItems:"center", gap:"0.35rem" }}>
+          {loading?"Saving…":voiceId?<>Done <CheckIcon size={12} strokeWidth={3}/></>:"Finish"}
         </button>
       </div>
     </div>

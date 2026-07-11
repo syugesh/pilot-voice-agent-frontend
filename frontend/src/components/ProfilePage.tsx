@@ -1,9 +1,10 @@
 /**
- * Profile + Settings pages — matching PILOT design system.
- * Dark/light mode, user details, voice settings.
+ * Profile page — matching PILOT design system.
+ * Account details, appearance (dark/light mode), voice identity.
  */
 import React, { useState } from "react";
 import { useAppStore } from "../store/SessionStore";
+import { ArrowLeftIcon, CheckIcon, LockIcon, MoonIcon, SunIcon } from "./Icons";
 
 function useC() {
   const theme = useAppStore(s => s.theme);
@@ -21,25 +22,6 @@ const inp = (C: ReturnType<typeof useC>): React.CSSProperties => ({
   border:`1.5px solid ${C.border}`, background:C.surface,
   color:C.text1, fontSize:"0.88rem", outline:"none",
 });
-
-function Toggle({ on, onChange, label }: { on:boolean; onChange:(v:boolean)=>void; label:string }) {
-  const C = useC();
-  return (
-    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
-                  padding:"0.75rem 0", borderBottom:`1px solid ${C.border}` }}>
-      <span style={{ fontSize:"0.88rem", color:C.text1 }}>{label}</span>
-      <div onClick={() => onChange(!on)}
-        style={{ width:44, height:24, borderRadius:12, cursor:"pointer",
-                 background: on ? C.amber : C.border,
-                 position:"relative", transition:"background 0.2s" }}>
-        <div style={{ position:"absolute", top:3, left: on ? 23 : 3,
-                      width:18, height:18, borderRadius:"50%",
-                      background:"#fff", transition:"left 0.2s",
-                      boxShadow:"0 1px 3px rgba(0,0,0,0.2)" }}/>
-      </div>
-    </div>
-  );
-}
 
 export function ProfilePage() {
   const store = useAppStore();
@@ -71,7 +53,9 @@ export function ProfilePage() {
         <div style={{ display:"flex", alignItems:"center", gap:"0.75rem", marginBottom:"2rem" }}>
           <button onClick={() => store.setPage("dashboard")}
             style={{ background:"none", border:"none", color:C.text3,
-                     cursor:"pointer", fontSize:"1.2rem", padding:"0.25rem" }}>←</button>
+                     cursor:"pointer", padding:"0.25rem", display:"flex", alignItems:"center" }}>
+            <ArrowLeftIcon size={19}/>
+          </button>
           <h1 style={{ fontSize:"1.6rem", fontWeight:800, color:C.text1 }}>Profile</h1>
         </div>
 
@@ -124,9 +108,40 @@ export function ProfilePage() {
             style={{ marginTop:"1rem", padding:"0.65rem 1.5rem", borderRadius:10,
                      background: saved ? "#22C55E" : C.amber, border:"none",
                      color:"#fff", fontWeight:600, cursor:"pointer", fontSize:"0.88rem",
-                     transition:"background 0.2s" }}>
-            {saved ? "✓ Saved" : "Save Changes"}
+                     transition:"background 0.2s",
+                     display:"flex", alignItems:"center", gap:"0.4rem" }}>
+            {saved ? <><CheckIcon size={13} strokeWidth={3}/> Saved</> : "Save Changes"}
           </button>
+        </div>
+
+        {/* Appearance */}
+        <div style={{ background:C.surface, borderRadius:16, padding:"1.5rem",
+                      border:`1.5px solid ${C.border}`, marginBottom:"1.25rem" }}>
+          <h3 style={{ fontSize:"0.9rem", fontWeight:700, color:C.text1, marginBottom:"1rem" }}>
+            Appearance
+          </h3>
+          <div style={{ display:"flex", gap:"0.75rem" }}>
+            {(["light","dark"] as const).map(t => (
+              <div key={t} onClick={() => store.setTheme(t)}
+                style={{ flex:1, padding:"1rem", borderRadius:12, cursor:"pointer",
+                         border:`2px solid ${store.theme===t ? C.amber : C.border}`,
+                         background: t==="dark" ? "#1A1A1A" : "#F9F8F6",
+                         display:"flex", alignItems:"center", gap:"0.6rem",
+                         transition:"border-color 0.2s" }}>
+                {t==="dark"
+                  ? <MoonIcon size={17} color="#F0F0F0"/>
+                  : <SunIcon size={17} color="#1A1A1A"/>}
+                <span style={{ fontSize:"0.85rem", fontWeight:600,
+                               color: t==="dark"?"#F0F0F0":"#1A1A1A",
+                               textTransform:"capitalize" }}>{t} Mode</span>
+                {store.theme===t && (
+                  <span style={{ marginLeft:"auto", color:C.amber, display:"flex" }}>
+                    <CheckIcon size={15} strokeWidth={3}/>
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Voice ID */}
@@ -137,7 +152,7 @@ export function ProfilePage() {
           </h3>
           <div style={{ display:"flex", alignItems:"center", gap:"1rem",
                         padding:"0.85rem 1rem", background:C.card, borderRadius:10 }}>
-            <div style={{ fontSize:"1.5rem" }}>🔒</div>
+            <LockIcon size={22} color={C.amberDark}/>
             <div>
               <div style={{ fontSize:"0.85rem", fontWeight:600, color:C.text1 }}>
                 Voice Profile Active
@@ -168,104 +183,6 @@ export function ProfilePage() {
             Sign Out
           </button>
         </div>
-      </div>
-    </div>
-  );
-}
-
-export function SettingsPage() {
-  const store  = useAppStore();
-  const C      = useC();
-  const [geminiKey, setGeminiKey] = useState("");
-  const [groqKey,   setGroqKey]   = useState("");
-  const [saved,     setSaved]     = useState(false);
-  const [noiseSuppress, setNoiseSuppress] = useState(true);
-  const [autoListen,    setAutoListen]    = useState(true);
-  const [showTranscript,setShowTranscript]= useState(true);
-
-  const isDark = store.theme === "dark";
-
-  async function saveKeys() {
-    // Store in .env isn't possible from browser — show instructions
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  }
-
-  return (
-    <div style={{ flex:1, overflow:"auto", background:C.bg, padding:"2rem 2.5rem" }}>
-      <div style={{ maxWidth:680, margin:"0 auto" }}>
-        <div style={{ display:"flex", alignItems:"center", gap:"0.75rem", marginBottom:"2rem" }}>
-          <button onClick={() => store.setPage("dashboard")}
-            style={{ background:"none", border:"none", color:C.text3, cursor:"pointer", fontSize:"1.2rem" }}>←</button>
-          <h1 style={{ fontSize:"1.6rem", fontWeight:800, color:C.text1 }}>Settings</h1>
-        </div>
-
-        {/* Appearance */}
-        <div style={{ background:C.surface, borderRadius:16, padding:"1.5rem",
-                      border:`1.5px solid ${C.border}`, marginBottom:"1.25rem" }}>
-          <h3 style={{ fontSize:"0.9rem", fontWeight:700, color:C.text1, marginBottom:"1rem" }}>
-            Appearance
-          </h3>
-          <div style={{ display:"flex", gap:"0.75rem", marginBottom:"0.5rem" }}>
-            {(["light","dark"] as const).map(t => (
-              <div key={t} onClick={() => store.setTheme(t)}
-                style={{ flex:1, padding:"1rem", borderRadius:12, cursor:"pointer",
-                         border:`2px solid ${store.theme===t ? C.amber : C.border}`,
-                         background: t==="dark" ? "#1A1A1A" : "#F9F8F6",
-                         display:"flex", alignItems:"center", gap:"0.6rem",
-                         transition:"border-color 0.2s" }}>
-                <span style={{ fontSize:"1.1rem" }}>{t==="dark"?"🌙":"☀️"}</span>
-                <span style={{ fontSize:"0.85rem", fontWeight:600,
-                               color: t==="dark"?"#F0F0F0":"#1A1A1A",
-                               textTransform:"capitalize" }}>{t} Mode</span>
-                {store.theme===t && (
-                  <span style={{ marginLeft:"auto", color:C.amber, fontWeight:700 }}>✓</span>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Voice settings */}
-        <div style={{ background:C.surface, borderRadius:16, padding:"1.5rem",
-                      border:`1.5px solid ${C.border}`, marginBottom:"1.25rem" }}>
-          <h3 style={{ fontSize:"0.9rem", fontWeight:700, color:C.text1, marginBottom:"0.75rem" }}>
-            Voice & Audio
-          </h3>
-          <Toggle on={noiseSuppress}    onChange={setNoiseSuppress}    label="Noise Suppression"/>
-          <Toggle on={autoListen}       onChange={setAutoListen}       label="Auto-resume after PILOT speaks"/>
-          <Toggle on={showTranscript}   onChange={setShowTranscript}   label="Show live transcript bar"/>
-        </div>
-
-        {/* API Keys */}
-        <div style={{ background:C.surface, borderRadius:16, padding:"1.5rem",
-                      border:`1.5px solid ${C.border}`, marginBottom:"1.25rem" }}>
-          <h3 style={{ fontSize:"0.9rem", fontWeight:700, color:C.text1, marginBottom:"0.5rem" }}>
-            AI Model Keys
-          </h3>
-          <p style={{ fontSize:"0.78rem", color:C.text3, marginBottom:"1rem" }}>
-            Add these to your <code style={{ background:C.card, padding:"1px 6px", borderRadius:4 }}>backend/.env</code> file to enable smarter AI responses.
-          </p>
-          <label style={{ fontSize:"0.78rem", fontWeight:500, color:C.text2, display:"block", marginBottom:"0.3rem" }}>
-            GEMINI_API_KEY
-          </label>
-          <input style={{...inp(C), marginBottom:"0.85rem", fontFamily:"monospace"}}
-            type="password" value={geminiKey} onChange={e=>setGeminiKey(e.target.value)}
-            placeholder="AIza..."/>
-          <label style={{ fontSize:"0.78rem", fontWeight:500, color:C.text2, display:"block", marginBottom:"0.3rem" }}>
-            GROQ_API_KEY
-          </label>
-          <input style={{...inp(C), marginBottom:"0.85rem", fontFamily:"monospace"}}
-            type="password" value={groqKey} onChange={e=>setGroqKey(e.target.value)}
-            placeholder="gsk_..."/>
-          <div style={{ padding:"0.65rem 0.85rem", background:C.card, borderRadius:8,
-                        fontSize:"0.75rem", color:C.text3, marginBottom:"0.75rem" }}>
-            💡 Add to <strong style={{color:C.text2}}>backend/.env</strong>:<br/>
-            <code>GEMINI_API_KEY={geminiKey||"your_key_here"}</code><br/>
-            <code>GROQ_API_KEY={groqKey||"your_key_here"}</code>
-          </div>
-        </div>
-
       </div>
     </div>
   );

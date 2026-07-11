@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type AppPage = "landing"|"login"|"signup"|"verify"|"enroll"|"dashboard"|"ppt"|"care"|"profile"|"settings"|"guidelines"|"about"|"forgot"|"choose-role";
+export type AppPage = "landing"|"login"|"signup"|"verify"|"enroll"|"dashboard"|"ppt"|"care"|"profile"|"about"|"forgot"|"choose-role";
 
 export interface TranscriptEntry {
   text:string; speaker:string|null; role:string|null; confidence:number; timestamp:number;
@@ -12,8 +12,17 @@ export interface JobItem {
   job_id:string; tool:string; status:string; requester?:string; mode?:string;
 }
 export interface Speaker { id:number; name:string; role:string; }
-export interface SlideShape { text:string; color:string; size:number; bold:boolean; left?:number; top?:number; width?:number; align?:string; }
-export interface SlideInfo { index:number; title:string; notes:string; bg_color?:string; shapes?:SlideShape[]; image_url?:string; }
+export interface SlideShape {
+  text:string; color:string|null; size:number; bold:boolean;
+  italic?:boolean; underline?:boolean; font?:string|null;
+  left?:number; top?:number; width?:number; height?:number; rotation?:number;
+  align?:string; shape_id?:number; type?:string;
+}
+export interface SlideInfo {
+  index:number; title:string; notes:string; bg_color?:string;
+  shapes?:SlideShape[]; image_url?:string; kind?:string|null;
+  slide_width?:number; slide_height?:number;
+}
 
 type Theme = "light" | "dark";
 
