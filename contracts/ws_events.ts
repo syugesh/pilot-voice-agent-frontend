@@ -19,6 +19,8 @@ export type WSEventType =
   | "wake_word"
   | "sentiment_update"
   | "resolution_update"
+  | "care_observe"
+  | "agent_note"
   | "ping";
 
 export interface WSEvent<T = unknown> {

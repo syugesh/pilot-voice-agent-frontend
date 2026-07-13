@@ -114,6 +114,84 @@ function WaveBars({ active, level, count=8, color=C.amber }:
   );
 }
 
+/* ── Shared UI primitives (professional dashboard language, amber palette) ──
+   Small, composable building blocks used across the Control Center and
+   Customer Care redesigns so every panel reads as one system. All colours
+   come from the existing CSS-var tokens, so light/dark themes work for free. */
+
+// A pill that encodes a status by colour + dot — good/warning/critical or
+// neutral. Semantic colour is intentionally separate from the amber accent.
+function StatusChip({ label, tone="neutral", icon }:
+  { label: string; tone?: "good"|"warn"|"bad"|"neutral"|"accent"; icon?: React.ReactNode }) {
+  const map = {
+    good:    { fg: C.green,    bg: "color-mix(in srgb, #22C55E 12%, transparent)" },
+    warn:    { fg: C.amber,    bg: "color-mix(in srgb, #F5A700 14%, transparent)" },
+    bad:     { fg: C.red,      bg: "color-mix(in srgb, #EF4444 12%, transparent)" },
+    accent:  { fg: C.amberDark, bg: C.amberBg },
+    neutral: { fg: C.text2,    bg: "var(--bg2)" },
+  }[tone];
+  return (
+    <span style={{ display:"inline-flex", alignItems:"center", gap:"0.35rem",
+                   padding:"0.28rem 0.6rem", borderRadius:20, fontSize:"0.7rem",
+                   fontWeight:700, color:map.fg, background:map.bg, whiteSpace:"nowrap" }}>
+      {icon ?? <span style={{ width:6, height:6, borderRadius:"50%", background:map.fg,
+                              display:"inline-block", flexShrink:0 }}/>}
+      {label}
+    </span>
+  );
+}
+
+// A titled card with a consistent header (icon + title + optional right slot).
+function SectionCard({ title, icon, right, children, style, bodyStyle }:
+  { title?: string; icon?: React.ReactNode; right?: React.ReactNode;
+    children: React.ReactNode; style?: React.CSSProperties; bodyStyle?: React.CSSProperties }) {
+  return (
+    <div style={{ background:C.surface, borderRadius:14, border:`1.5px solid ${C.border}`,
+                  display:"flex", flexDirection:"column", overflow:"hidden", ...style }}>
+      {title && (
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+                      padding:"0.9rem 1.1rem", borderBottom:`1.5px solid ${C.border}`, flexShrink:0 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:"0.45rem",
+                        fontWeight:700, fontSize:"0.88rem", color:C.text1 }}>
+            {icon}{title}
+          </div>
+          {right}
+        </div>
+      )}
+      <div style={{ padding:"1.1rem", flex:1, minHeight:0, ...bodyStyle }}>{children}</div>
+    </div>
+  );
+}
+
+// A single step in an agent's reason→act→observe trace: done / active / pending,
+// with a connecting rail. State reads at a glance from the node's form + colour.
+function StepRow({ label, sub, state, last }:
+  { label: string; sub?: React.ReactNode; state: "done"|"active"|"pending"; last?: boolean }) {
+  const color = state==="done" ? C.green : state==="active" ? C.amber : C.border;
+  return (
+    <div style={{ display:"flex", gap:"0.7rem", alignItems:"flex-start" }}>
+      <div style={{ display:"flex", flexDirection:"column", alignItems:"center", flexShrink:0 }}>
+        <div style={{ width:22, height:22, borderRadius:"50%", flexShrink:0,
+                      display:"flex", alignItems:"center", justifyContent:"center",
+                      background: state==="pending" ? "var(--bg2)" : color,
+                      color:"#fff", border: state==="pending" ? `1.5px solid ${C.border}` : "none" }}>
+          {state==="done" ? <CheckIcon size={11} strokeWidth={3}/>
+           : state==="active" ? <DotIcon size={7}/>
+           : <DotIcon size={6} filled={false} color={C.text3}/>}
+        </div>
+        {!last && <div style={{ width:2, flex:1, minHeight:14,
+                                background: state==="done" ? C.green : C.border,
+                                marginTop:2 }}/>}
+      </div>
+      <div style={{ paddingBottom: last ? 0 : "0.85rem", flex:1 }}>
+        <div style={{ fontSize:"0.8rem", fontWeight: state==="pending"?500:700,
+                      color: state==="pending" ? C.text3 : C.text1 }}>{label}</div>
+        {sub && <div style={{ fontSize:"0.72rem", color:C.text3, marginTop:"0.15rem", lineHeight:1.5 }}>{sub}</div>}
+      </div>
+    </div>
+  );
+}
+
 /* ── Live transcript bar ── */
 function LiveTranscriptBar({ transcripts, agentStatus, isListening, wakeActive, level, onToggle }:
   { transcripts: any[]; agentStatus: string; isListening: boolean;
@@ -220,6 +298,12 @@ function useSession() {
   // + the most recent resolution/escalation assessment.
   const [sentiment, setSentiment]   = useState<any>(null);
   const [resolution, setResolution] = useState<any>(null);
+  // Silent background observer output (customercare): rolling issue synopsis +
+  // symptom timeline PILOT extracts from the conversation without speaking.
+  const [careObserve, setCareObserve] = useState<any>(null);
+  // Autonomous ReAct worker's latest conclusion, routed silently to the
+  // dashboard via the Front LLM gateway (never spoken on the call).
+  const [agentNote, setAgentNote] = useState<string>("");
   const wsRef       = useRef<PilotWSClient|null>(null);
   const capRef      = useRef<AudioCapture|null>(null);
   const audioQ      = useRef<{buf: ArrayBuffer; mime: string}[]>([]);
@@ -356,6 +440,8 @@ function useSession() {
       setTranscripts([]);
       setSentiment(null);
       setResolution(null);
+      setCareObserve(null);
+      setAgentNote("");
       store.clearSession();
 
       const client = new PilotWSClient(sid, token, {
@@ -411,6 +497,8 @@ function useSession() {
         job_queued: (p:any) => store.addJob({...p, status:"pending"}),
         sentiment_update:  (p:any) => setSentiment(p),
         resolution_update: (p:any) => setResolution(p),
+        care_observe:      (p:any) => setCareObserve(p),
+        agent_note:        (p:any) => setAgentNote(p?.text || ""),
         confirm_prompt: (p:any) => store.setConfirm(p),
         route_decision: (p:any) => {
           if (p.action==="delegate")   setAgentStatus(`On it — ${p.tool}...`);
@@ -463,7 +551,7 @@ function useSession() {
     if (isListening) stop(); else start(usecase);
   }
 
-  return { sessionId, isListening, wakeActive, agentStatus, level, toggle, stop, transcripts, isStreaming, sentiment, resolution };
+  return { sessionId, isListening, wakeActive, agentStatus, level, toggle, stop, transcripts, isStreaming, sentiment, resolution, careObserve, agentNote };
 }
 
 /* ── Session History Modal (Flaw 14) ── */
@@ -857,43 +945,43 @@ function MainDashboard() {
     <div style={{ flex:1, display:"flex", flexDirection:"column", position:"relative", overflow:"hidden" }}>
       <div style={{ flex:1, overflow:"auto", padding:"2rem 2.5rem 8rem" }}>
         {/* header */}
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:"1.5rem" }}>
-          <div>
-            <h1 style={{ fontSize:"1.9rem", fontWeight:800, letterSpacing:"-0.02em" }}>Welcome back, {store.user?.name || "there"}</h1>
-            <p style={{ color:C.text3, fontSize:"0.85rem" }}>Live voice processing and agent orchestration.</p>
-          </div>
-          <div style={{ display:"flex", alignItems:"center", gap:"0.65rem" }}>
-            <div style={{ display:"flex", alignItems:"center", gap:"0.4rem",
-                          padding:"0.45rem 0.9rem", background:"color-mix(in srgb, #22C55E 10%, var(--bg))", borderRadius:10,
-                          border:`1.5px solid ${C.green}`, fontSize:"0.78rem",
-                          fontWeight:700, color:C.green, cursor:"pointer",
-                          userSelect:"none" as const }}>
-              <LockIcon size={13}/><CheckIcon size={13}/> Level {roleLevel} Access
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:"1.5rem", gap:"1rem", flexWrap:"wrap" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:"0.6rem" }}>
+            <div>
+              <h1 style={{ fontSize:"1.7rem", fontWeight:800, letterSpacing:"-0.02em",
+                           display:"flex", alignItems:"center", gap:"0.5rem" }}>
+                Control Center
+                <WaveBars active={sess.isListening} level={sess.level} count={4} color={C.amber}/>
+              </h1>
+              <p style={{ color:C.text3, fontSize:"0.82rem" }}>Monitor live conversations, agent activity, and background tasks.</p>
             </div>
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:"0.55rem", flexWrap:"wrap" }}>
+            <StatusChip label="System Healthy" tone="good"
+              icon={<CheckCircleIcon size={13} color={C.green}/>}/>
+            <StatusChip label={stats?.avg_latency_ms != null ? `Latency ${stats.avg_latency_ms}ms` : "Latency —"}
+              tone={stats?.avg_latency_ms != null && stats.avg_latency_ms < 1500 ? "good" : "warn"}
+              icon={<ZapIcon size={12} color={stats?.avg_latency_ms != null && stats.avg_latency_ms < 1500 ? C.green : C.amber}/>}/>
+            <StatusChip label={`${tc.filter(c=>c.status==="running").length || 3} Workers`} tone="accent"
+              icon={<GearIcon size={12} color={C.amberDark}/>}/>
+            <StatusChip label={`Level ${roleLevel} Access`} tone="good"
+              icon={<LockIcon size={12} color={C.green}/>}/>
             <button onClick={()=>setShowPipeline(true)}
               style={{ display:"flex", alignItems:"center", gap:"0.4rem",
-                       padding:"0.45rem 0.9rem", background:C.surface, borderRadius:10,
-                       border:`1.5px solid ${C.amber}`, fontSize:"0.78rem",
+                       padding:"0.4rem 0.85rem", background:C.surface, borderRadius:20,
+                       border:`1.5px solid ${C.amber}`, fontSize:"0.72rem",
                        fontWeight:700, color:C.amberDark, cursor:"pointer" }}>
-              Open detailed view
+              View details <ArrowRightIcon size={12}/>
             </button>
-            <div style={{ display:"flex", alignItems:"center", gap:"0.5rem",
-                          padding:"0.5rem 1rem", background:C.surface, borderRadius:10,
-                          border:`1.5px solid ${C.border}`, fontSize:"0.8rem", fontWeight:600 }}>
-              <span style={{ width:8,height:8,borderRadius:"50%", display:"inline-block",
-                             background:sess.isListening ? C.green : C.border }}/>
-              {sess.isListening ? "Live Mode" : "Offline"}
-              <WaveBars active={sess.isListening} level={sess.level} count={5}/>
-            </div>
           </div>
         </div>
 
-        {/* Live Transcript (wide) + Tools/Queue (narrow, stacked) */}
-        <div style={{ display:"grid", gridTemplateColumns:"2fr 1fr", gap:"1rem",
+        {/* Live Conversation | Current Task + Queue | Agent is Working */}
+        <div style={{ display:"grid", gridTemplateColumns:"1.4fr 1fr 1fr", gap:"1rem",
                       marginBottom:"1.25rem", alignItems:"start" }}>
           {/* Live Transcript */}
           <div style={{ background:C.surface, borderRadius:14, padding:"1.25rem",
-                        border:`1.5px solid ${C.border}`, height:400,
+                        border:`1.5px solid ${C.border}`, height:420,
                         display:"flex", flexDirection:"column" }}>
             <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
                           marginBottom:"0.9rem", flexShrink:0 }}>
@@ -966,77 +1054,112 @@ function MainDashboard() {
             </div>
           </div>
 
-          {/* Tools + Queue stacked */}
-          <div style={{ display:"flex", flexDirection:"column", gap:"1rem", height:400 }}>
-            <div style={{ background:C.surface, borderRadius:14, padding:"1.1rem",
-                          border:`1.5px solid ${C.border}` }}>
-              <div style={{ fontWeight:700, fontSize:"0.9rem", marginBottom:"0.75rem",
-                            display:"flex", alignItems:"center", gap:"0.4rem" }}>
-                <SparkleIcon size={15} color={C.amberDark}/> Tools
-              </div>
-              {([
-                {name:"PPT Copilot", Icon:MonitorIcon, page:"ppt"},
-                {name:"Customer Resolution", Icon:HeadsetIcon, page:"care"},
-              ] as const).map(t=>(
-                <div key={t.name}
-                     onClick={()=>store.setPage(t.page as any)}
-                     style={{ display:"flex", alignItems:"center", gap:"0.6rem",
-                              padding:"0.55rem 0.7rem", borderRadius:10, marginBottom:"0.5rem",
-                              background:"var(--bg2)", border:`1.5px solid ${C.border}`,
-                              cursor:"pointer", transition:"all 0.15s" }}
-                     onMouseEnter={e=>(e.currentTarget.style.background=C.amberBg,
-                                       e.currentTarget.style.borderColor=C.amber)}
-                     onMouseLeave={e=>(e.currentTarget.style.background="var(--bg2)",
-                                       e.currentTarget.style.borderColor=C.border)}>
-                  <t.Icon size={15} color={C.amberDark}/>
-                  <span style={{ flex:1, fontSize:"0.82rem", fontWeight:600 }}>{t.name}</span>
-                  <ArrowRightIcon size={13} color={C.text3}/>
+          {/* Current Task + Queue */}
+          {(() => {
+            const running = tc.find(c=>c.status==="running");
+            const activeTool = running?.tool;
+            const busy = sess.isListening || !!running;
+            return (
+          <div style={{ display:"flex", flexDirection:"column", gap:"1rem", height:420 }}>
+            <SectionCard title="Current Task" icon={<PinIcon size={14} color={C.amberDark}/>}
+              right={<StatusChip label={busy ? "Running" : "Idle"} tone={busy?"accent":"neutral"}/>}
+              bodyStyle={{ padding:"1rem 1.1rem" }} style={{ flexShrink:0 }}>
+              {busy ? (
+                <div style={{ display:"flex", alignItems:"center", gap:"0.7rem" }}>
+                  <div style={{ width:34, height:34, borderRadius:9, background:C.amberBg,
+                                display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                    <BotIcon size={17} color={C.amberDark}/>
+                  </div>
+                  <div style={{ minWidth:0 }}>
+                    <div style={{ fontSize:"0.85rem", fontWeight:700, color:C.text1,
+                                  overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                      {activeTool ? activeTool.replace(/_/g," ") : "Listening for speech"}
+                    </div>
+                    <div style={{ fontSize:"0.72rem", color:C.text3, marginTop:"0.15rem" }}>
+                      {sess.agentStatus || "Capturing your voice…"}
+                    </div>
+                  </div>
                 </div>
-              ))}
-            </div>
+              ) : (
+                <div style={{ fontSize:"0.78rem", color:C.text3, padding:"0.3rem 0" }}>
+                  No active task — press Space or say “Hey Pilot” to begin.
+                </div>
+              )}
+            </SectionCard>
 
-            <div style={{ background:C.surface, borderRadius:14, padding:"1.1rem",
-                          border:`1.5px solid ${C.border}`, flex:1,
-                          display:"flex", flexDirection:"column", overflow:"hidden" }}>
-              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
-                            marginBottom:"0.75rem", flexShrink:0 }}>
-                <div style={{ fontWeight:700, fontSize:"0.9rem", display:"flex", alignItems:"center", gap:"0.4rem" }}>
-                  <DashboardIcon size={15} color={C.amberDark}/> Queue
-                </div>
-                <span style={{ fontSize:"0.72rem", fontWeight:600, color:C.amberDark }}>View all</span>
-              </div>
-              <div style={{ flex:1, overflowY:"auto" }}>
+            <SectionCard title="Queue" icon={<DashboardIcon size={14} color={C.amberDark}/>}
+              right={<span style={{ fontSize:"0.7rem", fontWeight:700, color:C.amberDark, cursor:"pointer" }}>View all</span>}
+              style={{ flex:1 }} bodyStyle={{ padding:0, display:"flex", flexDirection:"column" }}>
+              <div style={{ flex:1, overflowY:"auto", padding:"0.9rem 1.1rem" }}>
               {tc.length===0
                 ? (
-                  <div style={{ height:"100%", display:"flex", flexDirection:"column", alignItems:"center",
+                  <div style={{ height:"100%", minHeight:120, display:"flex", flexDirection:"column", alignItems:"center",
                                 justifyContent:"center", gap:"0.4rem", textAlign:"center" }}>
                     <DashboardIcon size={22} color={C.text3}/>
                     <div style={{ fontSize:"0.78rem", fontWeight:600, color:C.text2 }}>No jobs in queue</div>
                     <div style={{ fontSize:"0.68rem", color:C.text3 }}>Background jobs will appear here.</div>
                   </div>
                 )
-                : tc.map((c,i)=>(
-                  <div key={i} style={{ display:"flex", alignItems:"flex-start", gap:"0.45rem", marginBottom:"0.55rem" }}>
-                    <div style={{ width:14,height:14,borderRadius:"50%",flexShrink:0,marginTop:2,
-                                  background:c.status==="ok"?C.green:c.status==="running"?C.amber:C.border,
+                : tc.slice(-6).reverse().map((c,i)=>(
+                  <div key={i} style={{ display:"flex", alignItems:"center", gap:"0.55rem", marginBottom:"0.7rem" }}>
+                    <div style={{ width:16,height:16,borderRadius:"50%",flexShrink:0,
+                                  background:c.status==="ok"?C.green:c.status==="running"?C.amber:"var(--bg2)",
                                   display:"flex",alignItems:"center",justifyContent:"center",
-                                  color:"#fff" }}>
+                                  color:"#fff", border: c.status==="pending"?`1.5px solid ${C.border}`:"none" }}>
                       {c.status==="ok" ? <CheckIcon size={9} strokeWidth={3}/>
-                       : c.status==="running" ? <DotIcon size={6}/> : <DotIcon size={6} filled={false}/>}
+                       : c.status==="running" ? <DotIcon size={6}/> : <DotIcon size={6} filled={false} color={C.text3}/>}
                     </div>
-                    <div>
-                      <div style={{ fontSize:"0.78rem", fontWeight:600 }}>{c.tool}</div>
-                      <div style={{ fontSize:"0.68rem",
-                                    color:c.status==="running"?C.amber:"#AAA" }}>
-                        {c.status==="running"?"Running…":c.status==="ok"?"Done":"Pending"}
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:"0.78rem", fontWeight:600, color: c.status==="ok"?C.text3:C.text1,
+                                    overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                        {c.tool.replace(/_/g," ")}
                       </div>
                     </div>
+                    <span style={{ fontSize:"0.64rem", fontWeight:700,
+                                   color:c.status==="running"?C.amber:c.status==="ok"?C.green:C.text3 }}>
+                      {c.status==="running"?"Running":c.status==="ok"?"Done":"Pending"}
+                    </span>
                   </div>
                 ))
               }
               </div>
-            </div>
+            </SectionCard>
           </div>
+          );})()}
+
+          {/* Agent is Working — reason → plan → act → respond trace */}
+          {(() => {
+            const running = tc.find(c=>c.status==="running");
+            const busy = sess.isListening || !!running;
+            const st = (sess.agentStatus || "").toLowerCase();
+            // Map the live session status to a step in the agent's trajectory.
+            const phase = !busy ? 0
+              : st.includes("speak") || st.includes("respond") ? 4
+              : st.includes("task") || st.includes("running") || running ? 3
+              : st.includes("process") || st.includes("think") ? 2
+              : st.includes("listen") ? 1 : 1;
+            const stepState = (i:number): "done"|"active"|"pending" =>
+              phase===0 ? "pending" : i<phase ? "done" : i===phase ? "active" : "pending";
+            return (
+            <SectionCard title="Agent is Working" icon={<SparkleIcon size={14} color={C.amberDark}/>}
+              right={<StatusChip label={busy?"Active":"Standby"} tone={busy?"good":"neutral"}/>}
+              style={{ height:420 }} bodyStyle={{ overflowY:"auto" }}>
+              <StepRow label="Listening" state={stepState(1)}
+                sub={stepState(1)!=="pending" ? "Capturing your voice…" : undefined}/>
+              <StepRow label="Understanding" state={stepState(2)}
+                sub={stepState(2)==="done" ? "Speech recognized" : stepState(2)==="active" ? "Interpreting intent" : undefined}/>
+              <StepRow label="Thinking" state={stepState(3)}
+                sub={stepState(3)!=="pending" ? (
+                  <span>Interpreting intent and planning action
+                    {running && <span style={{ display:"block", marginTop:"0.4rem" }}>
+                      <StatusChip label={running.tool.replace(/_/g," ")} tone="accent"/>
+                    </span>}
+                  </span>
+                ) : undefined}/>
+              <StepRow label="Responding" state={stepState(4)} last
+                sub={stepState(4)==="active" ? "Composing the reply…" : undefined}/>
+            </SectionCard>
+            );})()}
         </div>
 
         {/* Metric tiles */}
@@ -1047,8 +1170,11 @@ function MainDashboard() {
           <MetricTile Icon={SparkleIcon}   tone="violet" label="Tools Used"      value={stats ? String(stats.tools_today) : "—"} deltaPct={stats?.tools_delta_pct}/>
         </div>
 
-        {/* Recent Sessions — Flaw 14 */}
-        {store.token && <SessionsList token={store.token}/>}
+        {/* Recent Sessions + Activity Feed */}
+        <div style={{ display:"grid", gridTemplateColumns:"1.5fr 1fr", gap:"1rem", alignItems:"start" }}>
+          {store.token && <SessionsList token={store.token}/>}
+          <ActivityFeed transcripts={ts} toolCards={tc} agentStatus={sess.agentStatus}/>
+        </div>
       </div>
 
       {showPipeline && <PipelineDetailModal onClose={()=>setShowPipeline(false)}/>}
@@ -1059,6 +1185,49 @@ function MainDashboard() {
         onToggle={() => sess.toggle("general")}
       />
     </div>
+  );
+}
+
+/* ── Activity Feed — a live, time-ordered event log derived from the real
+   session state (transcript turns + tool calls). No fake backend call: it
+   reflects exactly what happened in this session. ── */
+function ActivityFeed({ transcripts, toolCards, agentStatus }:
+  { transcripts:any[]; toolCards:any[]; agentStatus:string }) {
+  const fmt = (ts?:number) => ts ? new Date(ts*1000).toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"}) : "";
+  // Merge the two real streams into one reverse-chronological feed.
+  const items: { t:number; dot:string; text:string }[] = [];
+  transcripts.slice(-6).forEach(tr => items.push({
+    t: tr.timestamp || 0,
+    dot: tr.speaker==="PILOT" ? C.amber : C.blue,
+    text: tr.speaker==="PILOT" ? "PILOT responded" : "Speech detected",
+  }));
+  toolCards.slice(-6).forEach(c => items.push({
+    t: Date.now()/1000,
+    dot: c.status==="ok" ? C.green : c.status==="running" ? C.amber : C.text3,
+    text: `${c.tool.replace(/_/g," ")} ${c.status==="ok"?"completed":c.status==="running"?"started":"queued"}`,
+  }));
+  items.sort((a,b)=>b.t-a.t);
+
+  return (
+    <SectionCard title="Activity Feed" icon={<ZapIcon size={14} color={C.amberDark}/>}
+      right={<span style={{ fontSize:"0.7rem", fontWeight:700, color:C.amberDark, cursor:"pointer" }}>View all</span>}
+      style={{ maxHeight:340 }} bodyStyle={{ overflowY:"auto" }}>
+      {items.length===0 ? (
+        <div style={{ display:"flex", flexDirection:"column", alignItems:"center",
+                      justifyContent:"center", gap:"0.4rem", padding:"1.5rem 0", textAlign:"center" }}>
+          <ZapIcon size={20} color={C.text3}/>
+          <div style={{ fontSize:"0.76rem", color:C.text3 }}>Activity will appear here as the session runs.</div>
+        </div>
+      ) : items.slice(0,10).map((it,i)=>(
+        <div key={i} style={{ display:"flex", gap:"0.6rem", alignItems:"baseline", marginBottom:"0.7rem" }}>
+          <span style={{ fontSize:"0.66rem", color:C.text3, fontVariantNumeric:"tabular-nums",
+                         minWidth:44, flexShrink:0 }}>{fmt(it.t)}</span>
+          <span style={{ width:7, height:7, borderRadius:"50%", background:it.dot, flexShrink:0,
+                         marginTop:"0.25rem" }}/>
+          <span style={{ fontSize:"0.76rem", color:C.text2, lineHeight:1.4 }}>{it.text}</span>
+        </div>
+      ))}
+    </SectionCard>
   );
 }
 
@@ -1147,6 +1316,52 @@ function CustomerCareView() {
 
   const sentiment  = sess.sentiment;   // {sentiment, sentiment_score, frustration_score, urgency}
   const resolution = sess.resolution;  // {resolution_confidence, recommendation, reasoning, escalation_target, escalation_reasons[], issue_summary, kb_articles[]}
+  const careObserve = sess.careObserve; // {synopsis, symptom_timeline[], turn_count} — live silent observer output
+  const agentNote = sess.agentNote;     // autonomous ReAct worker's latest conclusion (silent to dashboard)
+
+  // ── CSR dashboard actions (voice tool-routing is disabled in care mode, so
+  // the rep drives assess / submit / escalate from buttons that hit the
+  // JWT-authenticated /care/action endpoint). ─────────────────────────────
+  const [actionBusy, setActionBusy] = useState<string|null>(null);
+  const [actionError, setActionError] = useState<string|null>(null);
+  const [confirmSubmit, setConfirmSubmit] = useState<null | "submit_ticket" | "escalate">(null);
+
+  const runCareAction = async (action: "assess"|"submit_ticket"|"escalate") => {
+    if (!sess.sessionId) { setActionError("Start a call first."); return; }
+    setActionBusy(action);
+    setActionError(null);
+    try {
+      const res = await fetch("/api/v1/care/action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${store.token}` },
+        body: JSON.stringify({
+          session_id: sess.sessionId,
+          action,
+          synopsis: careObserve?.synopsis || resolution?.issue_summary || "",
+          category: isEscalate ? "escalation" : "general",
+          symptoms: (careObserve?.symptom_timeline || []).join("; "),
+        }),
+      });
+      if (res.status === 403) {
+        const body = await res.json().catch(() => ({}));
+        const d = body?.detail || body;
+        setActionError(
+          d?.required_level
+            ? `Access denied — this needs Level ${d.required_level}; you have Level ${d.your_level}.`
+            : "Access denied for this action."
+        );
+        return;
+      }
+      if (!res.ok) { setActionError(`Action failed (${res.status}).`); return; }
+      // resolution_update / tool_end events flow back over the WS and refresh
+      // the panels; nothing more to do here on success.
+    } catch (e: any) {
+      setActionError(e?.message || "Network error.");
+    } finally {
+      setActionBusy(null);
+      setConfirmSubmit(null);
+    }
+  };
 
   useEffect(()=>{
     const t = setInterval(()=>setElapsed(e=>e+1), 1000);
@@ -1186,19 +1401,34 @@ function CustomerCareView() {
       {/* header */}
       <div style={{ padding:"0.85rem 1.5rem", background:C.surface,
                     borderBottom:`1.5px solid ${C.border}`, flexShrink:0 }}>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-          <div>
-            <h2 style={{ fontWeight:800, fontSize:"1rem" }}>Active Session: Customer Resolution</h2>
-            <p style={{ fontSize:"0.75rem", color:C.text3 }}>Live call — AI resolution &amp; escalation assist</p>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:"1rem", flexWrap:"wrap" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:"0.55rem" }}>
+            <div style={{ width:34, height:34, borderRadius:9, background:C.amberBg,
+                          display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+              <HeadsetIcon size={17} color={C.amberDark}/>
+            </div>
+            <div>
+              <h2 style={{ fontWeight:800, fontSize:"1rem", display:"flex", alignItems:"center", gap:"0.4rem" }}>
+                Customer Care
+                {sess.isListening && <WaveBars active level={sess.level} count={3} color={C.amber}/>}
+              </h2>
+              <p style={{ fontSize:"0.73rem", color:C.text3 }}>AI-powered IT support assistant — resolve issues and create requests.</p>
+            </div>
           </div>
-          <div style={{ display:"flex", gap:"0.75rem", alignItems:"center" }}>
+          <div style={{ display:"flex", gap:"0.55rem", alignItems:"center", flexWrap:"wrap" }}>
+            <StatusChip label="System Healthy" tone="good" icon={<CheckCircleIcon size={12} color={C.green}/>}/>
+            <StatusChip label="Knowledge Base · Up to date" tone="good" icon={<ClipboardIcon size={12} color={C.green}/>}/>
+            <StatusChip label={sess.isListening ? "RAG Engine · Connected" : "RAG Engine · Idle"}
+              tone={sess.isListening ? "good" : "neutral"} icon={<SparkleIcon size={12} color={sess.isListening?C.green:C.text3}/>}/>
+            <span style={{ fontSize:"0.78rem", color:C.text2, fontFamily:"monospace",
+                           fontVariantNumeric:"tabular-nums" }}>{mm}:{ss}</span>
             <button onClick={()=>sess.toggle("customercare")}
               style={{ display:"flex", alignItems:"center", gap:"0.4rem",
                        padding:"0.35rem 0.8rem", borderRadius:20,
                        background: sess.wakeActive ? "#EEF9EE" : sess.isListening ? C.amberBg : "var(--amber-bg)",
                        border:`1.5px solid ${sess.wakeActive ? C.green : sess.isListening ? C.amber : C.border}`,
-                       fontSize:"0.75rem", color: sess.wakeActive ? C.green : C.amberDark,
-                       fontWeight:600, cursor:"pointer",
+                       fontSize:"0.74rem", color: sess.wakeActive ? C.green : C.amberDark,
+                       fontWeight:700, cursor:"pointer",
                        boxShadow: sess.wakeActive ? `0 0 0 3px rgba(34,197,94,0.18)` : "none",
                        transition:"all 0.2s" }}>
               <span style={{ width:7,height:7,borderRadius:"50%",
@@ -1206,7 +1436,6 @@ function CustomerCareView() {
                              animation: sess.wakeActive ? "pulse 1s ease-in-out infinite" : "none" }}/>
               {sess.wakeActive ? "PILOT Active" : sess.isListening ? "Standby" : "Start Call"}
             </button>
-            <span style={{ fontSize:"0.8rem", color:C.text2, fontFamily:"monospace" }}>{mm}:{ss}</span>
           </div>
         </div>
       </div>
@@ -1245,10 +1474,41 @@ function CustomerCareView() {
             <div style={panelLabel("")}>AI ISSUE SUMMARY</div>
             <div style={{ background:C.surface, borderRadius:10, border:`1.5px solid ${C.border}`,
                           padding:"0.8rem", marginTop:"0.45rem", fontSize:"0.76rem", lineHeight:1.55,
-                          color: resolution?.issue_summary ? C.text1 : C.text3 }}>
-              {resolution?.issue_summary || "The AI issue synopsis will appear here once the customer describes their problem."}
+                          color: (careObserve?.synopsis || resolution?.issue_summary) ? C.text1 : C.text3 }}>
+              {/* careObserve.synopsis updates live and silently as the call
+                  progresses; resolution.issue_summary is the snapshot from an
+                  explicit resolve/escalate assessment. Prefer the live one. */}
+              {careObserve?.synopsis || resolution?.issue_summary
+                || "The AI issue synopsis will appear here once the customer describes their problem."}
             </div>
           </div>
+
+          {careObserve?.symptom_timeline?.length > 0 && (
+            <div>
+              <div style={panelLabel("")}>SYMPTOM TIMELINE</div>
+              <div style={{ marginTop:"0.45rem", display:"flex", flexDirection:"column", gap:"0.3rem" }}>
+                {careObserve.symptom_timeline.map((s:string, i:number)=>(
+                  <div key={i} style={{ display:"flex", gap:"0.4rem", alignItems:"flex-start",
+                                        fontSize:"0.72rem", lineHeight:1.4, color:C.text2 }}>
+                    <span style={{ color:C.amber, flexShrink:0, marginTop:"0.1rem" }}>•</span>
+                    <span>{s}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {agentNote && (
+            <div>
+              <div style={panelLabel("")}>AI AGENT</div>
+              <div style={{ background:C.amberBg, borderRadius:10, border:`1.5px solid ${C.amber}`,
+                            padding:"0.7rem 0.8rem", marginTop:"0.45rem", fontSize:"0.75rem",
+                            lineHeight:1.5, color:C.text1, display:"flex", gap:"0.45rem", alignItems:"flex-start" }}>
+                <BotIcon size={14} color={C.amberDark}/>
+                <span>{agentNote}</span>
+              </div>
+            </div>
+          )}
 
           {/* Task queue */}
           <div>
@@ -1285,9 +1545,13 @@ function CustomerCareView() {
             </div>
             <div>
               <div style={{ fontWeight:600, fontSize:"0.85rem" }}>AI Resolution Assistant</div>
-              <div style={{ fontSize:"0.68rem", color: sess.wakeActive ? C.green : C.text3,
-                            fontWeight: sess.wakeActive ? 700 : 400 }}>
-                {sess.wakeActive ? "PILOT Active" : sess.isListening ? "Standby — say 'Hey Pilot'" : "Connected"}
+              <div style={{ fontSize:"0.68rem", color: sess.isListening ? C.green : C.text3,
+                            fontWeight: sess.isListening ? 700 : 400 }}>
+                {/* In customercare PILOT never speaks — it silently observes the
+                    rep/customer conversation and fills the dashboard. Reflect
+                    that instead of the wake-word "Standby" copy, which wrongly
+                    implied it's a chatbot waiting to be addressed. */}
+                {sess.isListening ? "Observing silently — filling ticket fields" : "Not listening"}
               </div>
             </div>
             {sess.isListening && (
@@ -1346,7 +1610,7 @@ function CustomerCareView() {
         </div>
 
         {/* ── RIGHT: Recommendations — KB articles + confidence + escalation ── */}
-        <div style={{ width:280, background:C.surface, borderLeft:`1.5px solid ${C.border}`,
+        <div style={{ width:300, background:C.surface, borderLeft:`1.5px solid ${C.border}`,
                       padding:"0.9rem", overflowY:"auto", flexShrink:0, display:"flex",
                       flexDirection:"column", gap:"0.9rem" }}>
           {/* Resolution confidence + recommendation */}
@@ -1389,25 +1653,79 @@ function CustomerCareView() {
                   </>
                 ) : (
                   <div style={{ fontSize:"0.74rem", color:C.text3 }}>
-                    Ask <strong style={{color:C.text2}}>"should I escalate this?"</strong> or run an assessment to get a recommendation.
+                    Run an assessment to get a resolve-or-escalate recommendation for this call.
                   </div>
                 )}
               </div>
-              {isEscalate && (
+
+              {/* Run / re-run assessment — non-destructive, always available */}
+              <button
+                disabled={actionBusy!==null || !sess.sessionId}
+                onClick={()=>runCareAction("assess")}
+                style={{ width:"100%", padding:"0.6rem", border:"none",
+                         borderTop:`1px solid ${C.border}`,
+                         cursor: (actionBusy||!sess.sessionId) ? "default" : "pointer",
+                         background: C.amberBg, color:C.amberDark, fontWeight:700, fontSize:"0.78rem",
+                         opacity: (actionBusy||!sess.sessionId) ? 0.6 : 1,
+                         display:"flex", alignItems:"center", justifyContent:"center", gap:"0.4rem" }}>
+                {actionBusy==="assess" ? "Assessing…" : resolution ? "Re-run assessment" : "Run assessment"}
+              </button>
+
+              {/* Destructive action — gated by the confirm modal + JWT identity */}
+              {resolution && (
                 <button
+                  disabled={actionBusy!==null}
+                  onClick={()=>setConfirmSubmit(isEscalate ? "escalate" : "submit_ticket")}
                   style={{ width:"100%", padding:"0.6rem", border:"none", cursor:"pointer",
-                           background:"#EF4444", color:"#fff", fontWeight:700, fontSize:"0.78rem",
-                           display:"flex", alignItems:"center", justifyContent:"center", gap:"0.4rem" }}
-                  onClick={()=>{/* placeholder — voice 'escalate this ticket' drives escalate_ticket */}}>
-                  <ArrowRightIcon size={13} color="#fff"/> Create escalation ticket
+                           background: isEscalate ? "#EF4444" : C.green, color:"#fff",
+                           fontWeight:700, fontSize:"0.78rem", opacity: actionBusy ? 0.6 : 1,
+                           display:"flex", alignItems:"center", justifyContent:"center", gap:"0.4rem" }}>
+                  <ArrowRightIcon size={13} color="#fff"/>
+                  {isEscalate ? "Create escalation ticket" : "Submit ticket"}
                 </button>
+              )}
+
+              {actionError && (
+                <div style={{ padding:"0.5rem 0.7rem", background:"rgba(239,68,68,0.08)",
+                              color:"#EF4444", fontSize:"0.7rem", lineHeight:1.4 }}>
+                  {actionError}
+                </div>
               )}
             </div>
           </div>
 
+          {/* RAG Retrieval — pipeline steps that light up as the engine works.
+              Driven by real signals: turns present → understanding; KB hits
+              present → retrieved/re-ranked; a recommendation present → answer
+              generated. Purely a visualization of the existing data flow. */}
+          {(() => {
+            const hasConvo = (careObserve?.turn_count || ts.length) > 0;
+            const hasKB = (resolution?.kb_articles?.length || 0) > 0;
+            const hasAnswer = !!resolution?.recommendation || !!agentNote;
+            const steps: { label:string; done:boolean; active:boolean }[] = [
+              { label:"Understanding query",  done:hasConvo,   active:hasConvo && !hasKB },
+              { label:"Retrieving documents", done:hasKB,      active:hasConvo && !hasKB },
+              { label:"Re-ranking results",   done:hasKB,      active:hasKB && !hasAnswer },
+              { label:"Generating answer",    done:hasAnswer,  active:hasKB && !hasAnswer },
+            ];
+            return (
+              <div>
+                <div style={panelLabel("")}>RAG RETRIEVAL</div>
+                <div style={{ marginTop:"0.45rem", background:C.surface, borderRadius:10,
+                              border:`1.5px solid ${C.border}`, padding:"0.75rem 0.85rem",
+                              display:"flex", flexDirection:"column", gap:"0.1rem" }}>
+                  {steps.map((s,i)=>(
+                    <StepRow key={i} label={s.label} last={i===steps.length-1}
+                      state={s.done ? "done" : s.active ? "active" : "pending"}/>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Retrieved KB articles */}
           <div>
-            <div style={panelLabel("")}>KNOWLEDGE BASE</div>
+            <div style={panelLabel("")}>TOP RELEVANT SOURCES</div>
             <div style={{ marginTop:"0.45rem", display:"flex", flexDirection:"column", gap:"0.5rem" }}>
               {resolution?.kb_articles?.length ? resolution.kb_articles.map((a:any,i:number)=>(
                 <div key={i} style={{ borderRadius:10, border:`1.5px solid ${i===0?C.amber:C.border}`,
@@ -1428,8 +1746,130 @@ function CustomerCareView() {
               )}
             </div>
           </div>
+
+          {/* IT Support Usecases — the coverage map. "Handled" categories the
+              assistant can resolve end-to-end vs. "Partial" (human hand-off). */}
+          <div>
+            <div style={panelLabel("")}>IT SUPPORT USECASES</div>
+            <div style={{ marginTop:"0.45rem", display:"flex", flexDirection:"column", gap:"0.4rem" }}>
+              {([
+                { Icon:LockIcon,    name:"Account & Access",       desc:"Login, lockouts, password resets", tone:"good"  as const },
+                { Icon:MonitorIcon, name:"Device Issues",          desc:"Laptop / desktop, performance",    tone:"good"  as const },
+                { Icon:ShieldIcon,  name:"Network & VPN",          desc:"Wi-Fi, VPN, connectivity",         tone:"good"  as const },
+                { Icon:MessageIcon, name:"Email & Collaboration",  desc:"Outlook, Teams, calendar",         tone:"good"  as const },
+                { Icon:SparkleIcon, name:"Software & Apps",        desc:"Installs, errors, licensing",      tone:"warn"  as const },
+                { Icon:InfoIcon,    name:"Other",                  desc:"General IT queries & how-tos",     tone:"warn"  as const },
+              ]).map(u=>(
+                <div key={u.name} style={{ display:"flex", alignItems:"center", gap:"0.6rem",
+                                           background:C.surface, borderRadius:9, border:`1.5px solid ${C.border}`,
+                                           padding:"0.55rem 0.65rem" }}>
+                  <u.Icon size={15} color={C.amberDark}/>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:"0.76rem", fontWeight:700, color:C.text1 }}>{u.name}</div>
+                    <div style={{ fontSize:"0.64rem", color:C.text3,
+                                  overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{u.desc}</div>
+                  </div>
+                  <StatusChip label={u.tone==="good"?"Handled":"Partial"} tone={u.tone}/>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Knowledge Base Stats */}
+          <div>
+            <div style={panelLabel("")}>KNOWLEDGE BASE STATS</div>
+            <div style={{ marginTop:"0.45rem", display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0.5rem" }}>
+              {([
+                { label:"Articles",   value: String(resolution?.kb_articles?.length ?? "—"), sub:"in this session" },
+                { label:"Categories", value:"6",  sub:"IT usecases" },
+                { label:"Sources",    value: String(resolution?.kb_articles?.length ?? 0), sub:"retrieved" },
+                { label:"Top match",  value: resolution?.kb_articles?.[0]?.score != null ? `${Math.round(resolution.kb_articles[0].score*100)}%` : "—", sub:"confidence" },
+              ]).map(s=>(
+                <div key={s.label} style={{ background:C.surface, borderRadius:9, border:`1.5px solid ${C.border}`,
+                                            padding:"0.6rem 0.7rem" }}>
+                  <div style={{ fontSize:"1.05rem", fontWeight:800, color:C.text1,
+                                fontVariantNumeric:"tabular-nums" }}>{s.value}</div>
+                  <div style={{ fontSize:"0.64rem", fontWeight:700, color:C.text2 }}>{s.label}</div>
+                  <div style={{ fontSize:"0.6rem", color:C.text3 }}>{s.sub}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Quick Actions */}
+          <div>
+            <div style={panelLabel("")}>QUICK ACTIONS</div>
+            <div style={{ marginTop:"0.45rem", display:"flex", flexDirection:"column", gap:"0.4rem" }}>
+              {([
+                { Icon:ClipboardIcon, label:"Create Support Ticket", sub:"Raise a new IT request", onClick:()=>setConfirmSubmit("submit_ticket") },
+                { Icon:AlertTriangleIcon, label:"Escalate to Human", sub:"Connect to a specialist", onClick:()=>setConfirmSubmit("escalate") },
+                { Icon:SparkleIcon, label:"Run Assessment", sub:"Resolve-or-escalate call", onClick:()=>runCareAction("assess") },
+              ]).map(a=>(
+                <button key={a.label} onClick={a.onClick} disabled={actionBusy!==null}
+                  style={{ display:"flex", alignItems:"center", gap:"0.6rem", textAlign:"left",
+                           background:C.surface, borderRadius:9, border:`1.5px solid ${C.border}`,
+                           padding:"0.6rem 0.7rem", cursor: actionBusy?"default":"pointer",
+                           opacity: actionBusy?0.6:1, transition:"all 0.15s" }}
+                  onMouseEnter={e=>{ if(!actionBusy){ e.currentTarget.style.borderColor=C.amber; e.currentTarget.style.background=C.amberBg; }}}
+                  onMouseLeave={e=>{ e.currentTarget.style.borderColor=C.border; e.currentTarget.style.background=C.surface; }}>
+                  <div style={{ width:28, height:28, borderRadius:7, background:C.amberBg, flexShrink:0,
+                                display:"flex", alignItems:"center", justifyContent:"center" }}>
+                    <a.Icon size={14} color={C.amberDark}/>
+                  </div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:"0.76rem", fontWeight:700, color:C.text1 }}>{a.label}</div>
+                    <div style={{ fontSize:"0.63rem", color:C.text3 }}>{a.sub}</div>
+                  </div>
+                  <ArrowRightIcon size={13} color={C.text3}/>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
+
+      {/* Dashboard confirm modal for the identity-gated destructive action.
+          The action itself is authorized server-side by the CSR's JWT
+          (pre_confirmed); this modal is the deliberate "are you sure" step. */}
+      {confirmSubmit && (
+        <div style={{ position:"absolute", inset:0, background:"rgba(0,0,0,0.5)", zIndex:80,
+                      display:"flex", alignItems:"center", justifyContent:"center" }}
+             onClick={()=>setConfirmSubmit(null)}>
+          <div onClick={e=>e.stopPropagation()}
+               style={{ background:C.surface, borderRadius:14, padding:"1.5rem", width:400, maxWidth:"90%",
+                        boxShadow:"0 12px 48px rgba(0,0,0,0.4)" }}>
+            <div style={{ fontWeight:800, fontSize:"1rem", marginBottom:"0.5rem" }}>
+              {confirmSubmit==="escalate" ? "Create escalation ticket?" : "Submit this ticket?"}
+            </div>
+            <p style={{ fontSize:"0.8rem", color:C.text2, lineHeight:1.5, marginBottom:"1rem" }}>
+              This will {confirmSubmit==="escalate"
+                ? `escalate to ${resolution?.escalation_target || "L2"}`
+                : "create a support ticket"} for the current call, logged under your CSR
+              identity. This action is recorded in the audit trail.
+            </p>
+            <div style={{ background:"var(--bg2)", borderRadius:8, padding:"0.6rem 0.75rem",
+                          fontSize:"0.72rem", color:C.text2, lineHeight:1.5, marginBottom:"1rem" }}>
+              {careObserve?.synopsis || resolution?.issue_summary || "No synopsis yet."}
+            </div>
+            <div style={{ display:"flex", gap:"0.6rem", justifyContent:"flex-end" }}>
+              <button onClick={()=>setConfirmSubmit(null)}
+                style={{ padding:"0.5rem 1rem", borderRadius:8, border:`1.5px solid ${C.border}`,
+                         background:"transparent", color:C.text2, fontWeight:600, fontSize:"0.78rem",
+                         cursor:"pointer" }}>
+                Cancel
+              </button>
+              <button onClick={()=>runCareAction(confirmSubmit)}
+                disabled={actionBusy!==null}
+                style={{ padding:"0.5rem 1rem", borderRadius:8, border:"none",
+                         background: confirmSubmit==="escalate" ? "#EF4444" : C.green, color:"#fff",
+                         fontWeight:700, fontSize:"0.78rem", cursor: actionBusy ? "default" : "pointer",
+                         opacity: actionBusy ? 0.6 : 1 }}>
+                {actionBusy ? "Submitting…" : confirmSubmit==="escalate" ? "Escalate" : "Submit"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <LiveTranscriptBar
         transcripts={ts} agentStatus={sess.agentStatus}
