@@ -13,7 +13,7 @@ import { PPTCopilotView } from "./PPTView";
 import { ProfilePage } from "./ProfilePage";
 import {
   IconBadge, DashboardIcon, MonitorIcon, HeadsetIcon, ClipboardIcon, InfoIcon,
-  GearIcon, LogOutIcon, MicIcon, AlertTriangleIcon, CheckIcon, CheckCircleIcon,
+  LogOutIcon, MicIcon, AlertTriangleIcon, CheckIcon, CheckCircleIcon,
   LockIcon, PinIcon, PhoneIcon, PlaneIcon, PlaneLandingIcon, CalendarIcon,
   UserIcon, BotIcon, HotelIcon, TrainIcon, ZapIcon, ShieldIcon, HomeIcon,
   SparkleIcon, MessageIcon, DotIcon, SendIcon, ArrowRightIcon, XIcon,
@@ -33,6 +33,44 @@ const C = {
   blue:      "#3B82F6",
   red:       "#EF4444",
 };
+
+// Internal tool names (e.g. "ppt_navigate", "kb_search") are an
+// implementation detail — showing them raw in status text/cards leaks the
+// tool-call architecture to end users. This maps each one to a plain-English
+// action a user would actually recognize.
+const TOOL_LABELS: Record<string, string> = {
+  ppt_navigate:       "Navigating slides",
+  ppt_jump_to_title:  "Jumping to slide",
+  ppt_summarize:      "Summarizing presentation",
+  ppt_delete_slide:   "Deleting slide",
+  ppt_edit_slide:     "Editing slide",
+  ppt_generate_notes: "Generating speaker notes",
+  ppt_last_action:    "Checking last change",
+  ppt_add_slide:      "Adding slide",
+  ppt_reorder_slide:  "Reordering slides",
+  ticket_create:      "Creating ticket",
+  ticket_update:      "Updating ticket",
+  ticket_close:       "Closing ticket",
+  kb_search:          "Searching knowledge base",
+  crm_lookup:         "Looking up customer",
+  travel_search:      "Searching travel options",
+  flight_book:        "Booking flight",
+  general_qa:         "Finding an answer",
+  navigate_page:      "Switching page",
+  resolution_assess:  "Assessing the call",
+  escalate_ticket:    "Creating escalation",
+};
+
+// Purely navigational tools complete instantly and aren't a "task" from the
+// user's point of view — surfacing "Running ppt_navigate..." for a slide
+// flip or a page switch is noisier than useful, so these never show a
+// running/queued status at all.
+const SILENT_TOOLS = new Set(["ppt_navigate", "navigate_page"]);
+
+function toolLabel(tool: string | undefined | null): string {
+  if (!tool) return "";
+  return TOOL_LABELS[tool] || tool.replace(/_/g, " ");
+}
 
 /* ── Sidebar ── */
 function Sidebar({ active }: { active: string }) {
@@ -474,11 +512,14 @@ function useSession() {
           setAgentStatus("Listening...");
         },
         tool_start: (p:any) => {
+          if (SILENT_TOOLS.has(p.tool)) return;
           store.upsertToolCard({...p, status:"running"});
-          setAgentStatus(`Running ${p.tool}...`);
+          setAgentStatus(`${toolLabel(p.tool)}...`);
         },
         tool_end: (p:any) => {
-          store.upsertToolCard({...p, status:p.result?.status||"ok"});
+          if (!SILENT_TOOLS.has(p.tool)) {
+            store.upsertToolCard({...p, status:p.result?.status||"ok"});
+          }
           const r = p.result;
           if (p.tool === "travel_search" && r?.results?.length) {
             const kind = r.service_type || "flights";
@@ -501,7 +542,9 @@ function useSession() {
         agent_note:        (p:any) => setAgentNote(p?.text || ""),
         confirm_prompt: (p:any) => store.setConfirm(p),
         route_decision: (p:any) => {
-          if (p.action==="delegate")   setAgentStatus(`On it — ${p.tool}...`);
+          if (p.action==="delegate" && !SILENT_TOOLS.has(p.tool)) {
+            setAgentStatus(`${toolLabel(p.tool)}...`);
+          }
           if (p.action==="respond_now") setAgentStatus("PILOT responding...");
         },
         session_state: (p:any) => {
@@ -938,7 +981,6 @@ function MainDashboard() {
       .then(r => r.json()).then(setStats).catch(() => {});
   }, [store.token]);
 
-  const last = ts[ts.length-1];
   const roleLevel = ({"admin":4,"manager":3,"csr":2,"operator":2,"developer":2,"user":1,"guest":1} as Record<string,number>)[store.user?.role?.toLowerCase()||"user"] ?? 1;
 
   return (
@@ -957,13 +999,6 @@ function MainDashboard() {
             </div>
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:"0.55rem", flexWrap:"wrap" }}>
-            <StatusChip label="System Healthy" tone="good"
-              icon={<CheckCircleIcon size={13} color={C.green}/>}/>
-            <StatusChip label={stats?.avg_latency_ms != null ? `Latency ${stats.avg_latency_ms}ms` : "Latency —"}
-              tone={stats?.avg_latency_ms != null && stats.avg_latency_ms < 1500 ? "good" : "warn"}
-              icon={<ZapIcon size={12} color={stats?.avg_latency_ms != null && stats.avg_latency_ms < 1500 ? C.green : C.amber}/>}/>
-            <StatusChip label={`${tc.filter(c=>c.status==="running").length || 3} Workers`} tone="accent"
-              icon={<GearIcon size={12} color={C.amberDark}/>}/>
             <StatusChip label={`Level ${roleLevel} Access`} tone="good"
               icon={<LockIcon size={12} color={C.green}/>}/>
             <button onClick={()=>setShowPipeline(true)}
@@ -1035,58 +1070,10 @@ function MainDashboard() {
               )}
             </div>
 
-            {/* Stat chips */}
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:"0.6rem",
-                          marginTop:"0.9rem", flexShrink:0 }}>
-              {[
-                { label:"Language", value:"en-US" },
-                { label:"Model", value:"Whisper distil-large-v3" },
-                { label:"Latency", value: stats?.avg_latency_ms != null ? `~${stats.avg_latency_ms}ms` : "—" },
-                { label:"Confidence", value: last?.confidence != null ? `${Math.round(last.confidence*100)}%` : "—" },
-              ].map(chip => (
-                <div key={chip.label} style={{ background:"var(--bg2)", borderRadius:8,
-                                               padding:"0.5rem 0.6rem", border:`1px solid ${C.border}` }}>
-                  <div style={{ fontSize:"0.62rem", color:C.text3, marginBottom:"0.15rem" }}>{chip.label}</div>
-                  <div style={{ fontSize:"0.76rem", fontWeight:700, color:C.text1,
-                                overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{chip.value}</div>
-                </div>
-              ))}
-            </div>
           </div>
 
-          {/* Current Task + Queue */}
-          {(() => {
-            const running = tc.find(c=>c.status==="running");
-            const activeTool = running?.tool;
-            const busy = sess.isListening || !!running;
-            return (
+          {/* Queue */}
           <div style={{ display:"flex", flexDirection:"column", gap:"1rem", height:420 }}>
-            <SectionCard title="Current Task" icon={<PinIcon size={14} color={C.amberDark}/>}
-              right={<StatusChip label={busy ? "Running" : "Idle"} tone={busy?"accent":"neutral"}/>}
-              bodyStyle={{ padding:"1rem 1.1rem" }} style={{ flexShrink:0 }}>
-              {busy ? (
-                <div style={{ display:"flex", alignItems:"center", gap:"0.7rem" }}>
-                  <div style={{ width:34, height:34, borderRadius:9, background:C.amberBg,
-                                display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-                    <BotIcon size={17} color={C.amberDark}/>
-                  </div>
-                  <div style={{ minWidth:0 }}>
-                    <div style={{ fontSize:"0.85rem", fontWeight:700, color:C.text1,
-                                  overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                      {activeTool ? activeTool.replace(/_/g," ") : "Listening for speech"}
-                    </div>
-                    <div style={{ fontSize:"0.72rem", color:C.text3, marginTop:"0.15rem" }}>
-                      {sess.agentStatus || "Capturing your voice…"}
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div style={{ fontSize:"0.78rem", color:C.text3, padding:"0.3rem 0" }}>
-                  No active task — press Space or say “Hey Pilot” to begin.
-                </div>
-              )}
-            </SectionCard>
-
             <SectionCard title="Queue" icon={<DashboardIcon size={14} color={C.amberDark}/>}
               right={<span style={{ fontSize:"0.7rem", fontWeight:700, color:C.amberDark, cursor:"pointer" }}>View all</span>}
               style={{ flex:1 }} bodyStyle={{ padding:0, display:"flex", flexDirection:"column" }}>
@@ -1112,7 +1099,7 @@ function MainDashboard() {
                     <div style={{ flex:1, minWidth:0 }}>
                       <div style={{ fontSize:"0.78rem", fontWeight:600, color: c.status==="ok"?C.text3:C.text1,
                                     overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                        {c.tool.replace(/_/g," ")}
+                        {toolLabel(c.tool)}
                       </div>
                     </div>
                     <span style={{ fontSize:"0.64rem", fontWeight:700,
@@ -1125,7 +1112,6 @@ function MainDashboard() {
               </div>
             </SectionCard>
           </div>
-          );})()}
 
           {/* Agent is Working — reason → plan → act → respond trace */}
           {(() => {
@@ -1170,10 +1156,9 @@ function MainDashboard() {
           <MetricTile Icon={SparkleIcon}   tone="violet" label="Tools Used"      value={stats ? String(stats.tools_today) : "—"} deltaPct={stats?.tools_delta_pct}/>
         </div>
 
-        {/* Recent Sessions + Activity Feed */}
-        <div style={{ display:"grid", gridTemplateColumns:"1.5fr 1fr", gap:"1rem", alignItems:"start" }}>
+        {/* Recent Sessions */}
+        <div style={{ display:"grid", gridTemplateColumns:"1fr", gap:"1rem", alignItems:"start" }}>
           {store.token && <SessionsList token={store.token}/>}
-          <ActivityFeed transcripts={ts} toolCards={tc} agentStatus={sess.agentStatus}/>
         </div>
       </div>
 
@@ -1185,49 +1170,6 @@ function MainDashboard() {
         onToggle={() => sess.toggle("general")}
       />
     </div>
-  );
-}
-
-/* ── Activity Feed — a live, time-ordered event log derived from the real
-   session state (transcript turns + tool calls). No fake backend call: it
-   reflects exactly what happened in this session. ── */
-function ActivityFeed({ transcripts, toolCards, agentStatus }:
-  { transcripts:any[]; toolCards:any[]; agentStatus:string }) {
-  const fmt = (ts?:number) => ts ? new Date(ts*1000).toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"}) : "";
-  // Merge the two real streams into one reverse-chronological feed.
-  const items: { t:number; dot:string; text:string }[] = [];
-  transcripts.slice(-6).forEach(tr => items.push({
-    t: tr.timestamp || 0,
-    dot: tr.speaker==="PILOT" ? C.amber : C.blue,
-    text: tr.speaker==="PILOT" ? "PILOT responded" : "Speech detected",
-  }));
-  toolCards.slice(-6).forEach(c => items.push({
-    t: Date.now()/1000,
-    dot: c.status==="ok" ? C.green : c.status==="running" ? C.amber : C.text3,
-    text: `${c.tool.replace(/_/g," ")} ${c.status==="ok"?"completed":c.status==="running"?"started":"queued"}`,
-  }));
-  items.sort((a,b)=>b.t-a.t);
-
-  return (
-    <SectionCard title="Activity Feed" icon={<ZapIcon size={14} color={C.amberDark}/>}
-      right={<span style={{ fontSize:"0.7rem", fontWeight:700, color:C.amberDark, cursor:"pointer" }}>View all</span>}
-      style={{ maxHeight:340 }} bodyStyle={{ overflowY:"auto" }}>
-      {items.length===0 ? (
-        <div style={{ display:"flex", flexDirection:"column", alignItems:"center",
-                      justifyContent:"center", gap:"0.4rem", padding:"1.5rem 0", textAlign:"center" }}>
-          <ZapIcon size={20} color={C.text3}/>
-          <div style={{ fontSize:"0.76rem", color:C.text3 }}>Activity will appear here as the session runs.</div>
-        </div>
-      ) : items.slice(0,10).map((it,i)=>(
-        <div key={i} style={{ display:"flex", gap:"0.6rem", alignItems:"baseline", marginBottom:"0.7rem" }}>
-          <span style={{ fontSize:"0.66rem", color:C.text3, fontVariantNumeric:"tabular-nums",
-                         minWidth:44, flexShrink:0 }}>{fmt(it.t)}</span>
-          <span style={{ width:7, height:7, borderRadius:"50%", background:it.dot, flexShrink:0,
-                         marginTop:"0.25rem" }}/>
-          <span style={{ fontSize:"0.76rem", color:C.text2, lineHeight:1.4 }}>{it.text}</span>
-        </div>
-      ))}
-    </SectionCard>
   );
 }
 

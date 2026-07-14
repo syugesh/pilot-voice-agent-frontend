@@ -701,14 +701,29 @@ function mergeSlidesKeepingImages(previous: Slide[], incoming: Slide[]): Slide[]
   });
 }
 
-// Stable per-tab id for uploads made before a live voice session exists —
-// avoids every such upload colliding into one shared "default" backend slot.
+// Stable per-tab id for the deck currently being viewed/edited, used when no
+// live voice session exists — every nav/edit/delete action on the CURRENT
+// deck must keep hitting this same backend slot within one visit.
 function getAnonPptSid(): string {
   let s = sessionStorage.getItem("pilot_ppt_anon_sid");
   if (!s) {
     s = `anon-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
     sessionStorage.setItem("pilot_ppt_anon_sid", s);
   }
+  return s;
+}
+
+// A brand-new id for a NEW deck (fresh upload or fresh generation). Every
+// previous version of this returned the SAME tab-lifetime id from
+// getAnonPptSid() for every new upload/generation too, which meant a
+// second upload in the same tab silently overwrote the first upload's
+// backend file AND its history entry — real, permanent data loss, not
+// just a missing-from-the-list display bug. Minting a fresh id here and
+// making it the new "current deck" id (so subsequent edits on THIS deck
+// keep targeting it) fixes that at the source.
+function newAnonPptSid(): string {
+  const s = `anon-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  sessionStorage.setItem("pilot_ppt_anon_sid", s);
   return s;
 }
 
@@ -721,6 +736,7 @@ export function PPTCopilotView({ sessionId, isListening, agentStatus }:
   const [slides,     setSlides]     = useState<Slide[]>((store.pptSlides as Slide[]) || []);
   const [current,    setCurrent]    = useState(0);
   const [canvasMode, setCanvasMode] = useState(true);   // WYSIWYG canvas (default editor) vs static preview
+  const [presenting, setPresenting] = useState(false);  // fullscreen presenter view
   const [uploading,  setUploading]  = useState(false);
   const [fileName,   setFileName]   = useState(store.pptFileName || "");
   const [agentLog,   setAgentLog]   = useState<string[]>([]);
@@ -765,17 +781,25 @@ export function PPTCopilotView({ sessionId, isListening, agentStatus }:
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const sid = sessionId || getAnonPptSid();
+      // A new upload is always a NEW deck — mint a fresh id so it never
+      // overwrites whatever deck this tab was previously showing.
+      const sid = sessionId || newAnonPptSid();
       const res = await fetch(`/api/v1/ppt/upload?session_id=${sid}`, {
         method:"POST", headers:{Authorization:`Bearer ${token}`}, body:fd
-      }).then(r=>r.json());
+      }).then(async r => {
+        if (!r.ok) {
+          const body = await r.json().catch(() => null);
+          throw new Error(body?.detail || r.statusText);
+        }
+        return r.json();
+      });
       const sl: Slide[] = res.slides || [];
       setSlides(sl);
       store.setPptSlides(sl);
       setCurrent(0);
       setAgentLog(l => [...l, `✓ Loaded ${sl.length} slides from ${name}`]);
-    } catch(e) {
-      setAgentLog(l => [...l, "✗ Upload failed"]);
+    } catch(e: any) {
+      setAgentLog(l => [...l, `✗ Upload failed: ${e.message || "unknown error"}`]);
     } finally { setUploading(false); }
   }
 
@@ -1027,16 +1051,24 @@ export function PPTCopilotView({ sessionId, isListening, agentStatus }:
   const generatePPT = useCallback(async () => {
     if (!genDesc.trim()) return;
     setGenerating(true);
-    setGenProgress(`Generating ${genCount} slides with AI…`);
-    const sid = sessionId || getAnonPptSid();
+    // No progress copy while generating — just the spinner below, so
+    // implementation details (model, ETA) never surface to the end user.
+    setGenProgress(" ");
+    // A new generation is always a NEW deck — mint a fresh id so it never
+    // overwrites whatever deck this tab was previously showing.
+    const sid = sessionId || newAnonPptSid();
     try {
-      const est = Math.round(genCount * 0.6);
-      setGenProgress(`Asking Ollama to write ${genCount} slides… (~${est}s)`);
       const res = await fetch("/api/v1/ppt/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ session_id: sid, description: genDesc.trim(), slide_count: genCount }),
-      }).then(r => { if (!r.ok) throw new Error(r.statusText); return r.json(); });
+      }).then(async r => {
+        if (!r.ok) {
+          const body = await r.json().catch(() => null);
+          throw new Error(body?.detail || r.statusText);
+        }
+        return r.json();
+      });
 
       const sl: Slide[] = res.slides || [];
       setSlides(sl);
@@ -1169,6 +1201,9 @@ export function PPTCopilotView({ sessionId, isListening, agentStatus }:
                     {entry.title}
                   </div>
                   <div style={{ fontSize:"0.68rem", color:C.text3, marginTop:"0.2rem", display:"flex", gap:"0.75rem" }}>
+                    <span style={{ fontWeight:600, color: entry.description === "Uploaded presentation" ? C.amberDark : C.text3 }}>
+                      {entry.description === "Uploaded presentation" ? "Uploaded" : "Generated"}
+                    </span>
                     <span>{entry.slide_count} slides</span>
                     <span>{new Date(entry.created_at).toLocaleDateString(undefined, { month:"short", day:"numeric", hour:"2-digit", minute:"2-digit" })}</span>
                   </div>
@@ -1192,8 +1227,8 @@ export function PPTCopilotView({ sessionId, isListening, agentStatus }:
               <a href={`/api/v1/ppt/export-pdf/${sid}`}
                 download
                 style={{ padding:"0.45rem 1rem", borderRadius:8, textDecoration:"none",
-                         background:"rgba(34,197,94,0.1)", border:"1.5px solid rgba(34,197,94,0.4)",
-                         color:"#22C55E", fontWeight:600, fontSize:"0.8rem", cursor:"pointer",
+                         background:C.amberBg, border:`1.5px solid ${C.amber}`,
+                         color:C.amberDark, fontWeight:600, fontSize:"0.8rem", cursor:"pointer",
                          display:"flex", alignItems:"center", gap:"0.3rem" }}>
                 ⬇ Export PDF
               </a>
@@ -1208,6 +1243,17 @@ export function PPTCopilotView({ sessionId, isListening, agentStatus }:
             </>
           );
         })()}
+
+        {/* Present button — fullscreen presenter view */}
+        {slides.length > 0 && (
+          <button onClick={() => setPresenting(true)}
+            style={{ padding:"0.45rem 1rem", borderRadius:8, background:C.amberBg,
+                     border:`1.5px solid ${C.amber}`, color:C.amberDark,
+                     fontWeight:600, fontSize:"0.8rem", cursor:"pointer",
+                     display:"flex", alignItems:"center", gap:"0.35rem" }}>
+            <PresentationIcon size={14}/> Present
+          </button>
+        )}
 
         {/* Remove button — only shown when slides are loaded */}
         {slides.length > 0 && (
@@ -1803,7 +1849,7 @@ export function PPTCopilotView({ sessionId, isListening, agentStatus }:
                 {!genProgress.startsWith("Failed") && (
                   <span style={{ display:"inline-block", animation:"spin 1s linear infinite" }}>⟳</span>
                 )}
-                {genProgress}
+                {genProgress.startsWith("Failed") && genProgress}
               </div>
             )}
 
@@ -1938,6 +1984,88 @@ export function PPTCopilotView({ sessionId, isListening, agentStatus }:
           </div>
         </div>
       )}
+
+      {presenting && (
+        <PresenterView
+          slides={slides}
+          current={current}
+          setCurrent={setCurrent}
+          onExit={() => setPresenting(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ── Presenter View — fullscreen slide display with speaker notes for the
+   person presenting. Notes are shown here only, never spoken aloud (this
+   is a silent visual aid, distinct from PILOT's voice responses) — the
+   presenter reads them; PILOT never reads them out. ── */
+function PresenterView({ slides, current, setCurrent, onExit }:
+  { slides: Slide[]; current: number; setCurrent: (n:number)=>void; onExit: ()=>void }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const slide = slides[current];
+  const title = inferSlideTitle(slide, `Slide ${current+1}`);
+  const notes = slide?.notes || "";
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (el?.requestFullscreen) el.requestFullscreen().catch(() => {});
+    return () => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); };
+  }, []);
+
+  useEffect(() => {
+    const onFsChange = () => { if (!document.fullscreenElement) onExit(); };
+    document.addEventListener("fullscreenchange", onFsChange);
+    return () => document.removeEventListener("fullscreenchange", onFsChange);
+  }, [onExit]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onExit();
+      else if (e.key === "ArrowRight" || e.key === " ") setCurrent(Math.min(current+1, slides.length-1));
+      else if (e.key === "ArrowLeft") setCurrent(Math.max(current-1, 0));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [current, slides.length, onExit, setCurrent]);
+
+  return (
+    <div ref={containerRef} style={{ position:"fixed", inset:0, zIndex:1000, background:"#000",
+                                      display:"flex", flexDirection:"column" }}>
+      <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", position:"relative" }}>
+        <button onClick={onExit}
+          style={{ position:"absolute", top:16, right:16, zIndex:10, width:36, height:36, borderRadius:8,
+                   background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.2)",
+                   color:"#fff", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
+          <XIcon size={16}/>
+        </button>
+        <div style={{ position:"absolute", top:16, left:16, zIndex:10,
+                      padding:"0.3rem 0.7rem", borderRadius:6, background:"rgba(255,255,255,0.1)",
+                      color:"#F5A700", fontSize:"0.75rem", fontWeight:700, letterSpacing:"0.06em" }}>
+          {current+1} / {slides.length}
+        </div>
+        <div onClick={() => setCurrent(Math.min(current+1, slides.length-1))}
+          style={{ position:"absolute", inset:0, cursor: current < slides.length-1 ? "pointer" : "default" }}/>
+        {slide?.image_url ? (
+          <img src={slide.image_url} alt={title}
+            style={{ maxWidth:"92%", maxHeight:"85%", objectFit:"contain", pointerEvents:"none" }}/>
+        ) : (
+          <div style={{ color:"#fff", fontSize:"1.4rem", fontWeight:700 }}>{title}</div>
+        )}
+      </div>
+
+      {/* Speaker notes — visible to the presenter only, never spoken aloud */}
+      <div style={{ background:"rgba(255,255,255,0.06)", borderTop:"1px solid rgba(255,255,255,0.12)",
+                    padding:"0.85rem 1.5rem", maxHeight:"22vh", overflowY:"auto", flexShrink:0 }}>
+        <div style={{ fontSize:"0.68rem", fontWeight:700, color:"#F5A700", letterSpacing:"0.08em",
+                      marginBottom:"0.3rem" }}>
+          SPEAKER NOTES
+        </div>
+        <div style={{ fontSize:"0.85rem", color:"rgba(255,255,255,0.85)", lineHeight:1.6 }}>
+          {notes || <span style={{ fontStyle:"italic", color:"rgba(255,255,255,0.4)" }}>No notes for this slide.</span>}
+        </div>
+      </div>
     </div>
   );
 }
