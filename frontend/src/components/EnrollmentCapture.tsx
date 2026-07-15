@@ -24,7 +24,19 @@ export function EnrollmentCapture({ onDone }: { onDone: () => void }) {
       return;
     }
     chunksRef.current = [];
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    if (!navigator.mediaDevices) {
+      setStatus("Error: Insecure context (Mic requires HTTPS or localhost)");
+      return;
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl:  true,
+        sampleRate:       16000,
+        channelCount:     1,
+      },
+    });
     const mr = new MediaRecorder(stream);
     mrRef.current = mr;
     mr.ondataavailable = (e) => chunksRef.current.push(e.data);

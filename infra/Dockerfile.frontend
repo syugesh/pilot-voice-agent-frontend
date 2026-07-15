@@ -1,29 +1,10 @@
 FROM node:20-slim AS builder
-
 WORKDIR /app
-
-# Copy package files first for better Docker cache
-COPY frontend/package*.json ./frontend/
-COPY frontend/tsconfig.json ./frontend/
-COPY frontend/vite.config.* ./frontend/
-
-# Copy shared contracts folder because frontend imports ../../contracts/ws_events
-COPY contracts ./contracts
-
-# Install frontend dependencies
-WORKDIR /app/frontend
+COPY frontend/package.json frontend/tsconfig.json ./
 RUN npm install
-
-# Copy frontend source code
-COPY frontend/ /app/frontend/
-
-# Build frontend
+COPY frontend/ .
 RUN npm run build
 
 FROM nginx:alpine
-
-COPY --from=builder /app/frontend/dist /usr/share/nginx/html
-
+COPY --from=builder /app/dist /usr/share/nginx/html
 EXPOSE 80
-
-CMD ["nginx", "-g", "daemon off;"]
