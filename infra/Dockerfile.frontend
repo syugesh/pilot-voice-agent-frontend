@@ -2,24 +2,26 @@ FROM node:20-slim AS builder
 
 WORKDIR /app/frontend
 
-# Copy package files first
-COPY frontend/package*.json ./
+# Copy dependency files first
+COPY frontend/package.json frontend/package-lock.json ./
 
-# Install frontend dependencies
-RUN npm install
+# Install exact dependencies from package-lock.json
+RUN npm ci
 
-# Copy frontend source code
+# Copy frontend source
 COPY frontend/ ./
 
-# Copy shared contracts outside the frontend directory
+# Copy shared contracts while preserving the required folder structure
 COPY contracts/ /app/contracts/
 
-# Build frontend
+# Confirm the required contract file exists
+RUN test -f /app/contracts/ws_events.ts
+
+# Build the frontend
 RUN npm run build
 
 FROM nginx:alpine
 
-# Copy Vite build output to Nginx
 COPY --from=builder /app/frontend/dist /usr/share/nginx/html
 
 EXPOSE 80
