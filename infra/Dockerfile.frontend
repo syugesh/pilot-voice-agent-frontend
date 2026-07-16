@@ -1,26 +1,27 @@
 FROM node:20-slim AS builder
 
-# Preserve the repository folder structure
 WORKDIR /app/frontend
 
-# Copy dependency files first for Docker layer caching
-COPY frontend/package.json frontend/package-lock.json ./
+# Copy package files first
+COPY frontend/package*.json ./
 
-# Install exact dependencies from package-lock.json
-RUN npm ci
+# Install frontend dependencies
+RUN npm install
 
-# Copy the frontend application
+# Copy frontend source code
 COPY frontend/ ./
 
-# Copy the shared contracts folder
+# Copy shared contracts outside the frontend directory
 COPY contracts/ /app/contracts/
 
-# Build the frontend
+# Build frontend
 RUN npm run build
 
 FROM nginx:alpine
 
-# Copy the generated Vite build into Nginx
+# Copy Vite build output to Nginx
 COPY --from=builder /app/frontend/dist /usr/share/nginx/html
 
 EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
