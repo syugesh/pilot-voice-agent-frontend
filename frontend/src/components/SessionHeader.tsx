@@ -1458,7 +1458,7 @@ export function LandingPage() {
                   background: C.amber, color: "#fff", fontWeight: 700, fontSize: "0.83rem", cursor: "pointer",
                   boxShadow: "0 4px 12px rgba(245,167,0,0.25)"
                 }}>
-                Get Started Free
+                Get Started
               </button>
             </>
           )}
@@ -1512,13 +1512,13 @@ export function LandingPage() {
             A suite of high-fidelity, voice-first applications built directly into the operating system. Streamline your workflow, manage correspondence, and generate presentations entirely through natural speech.
           </p>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "2rem" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "1rem" }}>
 
             {/* 1. Dashboard */}
             <div style={{ background: "#FFFFFF", border: `1.5px solid ${C.border}`, borderRadius: 18, padding: "2rem", display: "flex", flexDirection: "column", gap: "1.2rem", boxShadow: "0 4px 20px rgba(0,0,0,0.02)" }}>
               <div style={{ fontSize: "2rem" }}>🚀</div>
               <div>
-                <h3 style={{ fontSize: "1.2rem", fontWeight: 800, margin: "0 0 0.5rem 0", color: C.text1 }}>Real-Time OS Dashboard</h3>
+                <h3 style={{ fontSize: "1.2rem", fontWeight: 800, margin: "0 0 0.5rem 0", color: C.text1 }}>Dashboard</h3>
                 <p style={{ fontSize: "0.88rem", color: C.text2, lineHeight: 1.6, margin: 0 }}>
                   The central command center of the voice operating system. Monitor audio signal frequencies, view continuous real-time transcriptions, and verify active speaker biometrics.
                 </p>
@@ -1547,26 +1547,26 @@ export function LandingPage() {
             </div>
 
             {/* 3. Email Center */}
-            <div style={{ background: "#FFFFFF", border: `1.5px solid ${C.border}`, borderRadius: 18, padding: "2rem", display: "flex", flexDirection: "column", gap: "1.2rem", boxShadow: "0 4px 20px rgba(0,0,0,0.02)" }}>
-              <div style={{ fontSize: "2rem" }}>✉️</div>
-              <div>
+            {/* <div style={{ background: "#FFFFFF", border: `1.5px solid ${C.border}`, borderRadius: 18, padding: "2rem", display: "flex", flexDirection: "column", gap: "1.2rem", boxShadow: "0 4px 20px rgba(0,0,0,0.02)" }}>
+              <div style={{ fontSize: "2rem" }}>✉️</div> */}
+              {/* <div>
                 <h3 style={{ fontSize: "1.2rem", fontWeight: 800, margin: "0 0 0.5rem 0", color: C.text1 }}>Voice-First Email Center</h3>
                 <p style={{ fontSize: "0.88rem", color: C.text2, lineHeight: 1.6, margin: 0 }}>
                   Draft, refine, and dispatch professional correspondence entirely using natural speech. Organize communication queues and manage outboxes hands-free.
                 </p>
-              </div>
-              <ul style={{ paddingLeft: "1.2rem", margin: 0, fontSize: "0.82rem", color: C.text2, display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+              </div> */}
+              {/* <ul style={{ paddingLeft: "1.2rem", margin: 0, fontSize: "0.82rem", color: C.text2, display: "flex", flexDirection: "column", gap: "0.4rem" }}>
                 <li>Continuous dictation for writing complex email drafts</li>
                 <li>Automated recipient matching and subject line generation</li>
                 <li>Background queue scheduling for reliable outbox delivery</li>
               </ul>
-            </div>
+            </div> */}
 
             {/* 4. Customer Care */}
             <div style={{ background: "#FFFFFF", border: `1.5px solid ${C.border}`, borderRadius: 18, padding: "2rem", display: "flex", flexDirection: "column", gap: "1.2rem", boxShadow: "0 4px 20px rgba(0,0,0,0.02)" }}>
               <div style={{ fontSize: "2rem" }}>✈️</div>
               <div>
-                <h3 style={{ fontSize: "1.2rem", fontWeight: 800, margin: "0 0 0.5rem 0", color: C.text1 }}>Real-Time Flight Tracker</h3>
+                <h3 style={{ fontSize: "1.2rem", fontWeight: 800, margin: "0 0 0.5rem 0", color: C.text1 }}>Travel Planner</h3>
                 <p style={{ fontSize: "0.88rem", color: C.text2, lineHeight: 1.6, margin: 0 }}>
                   A voice-driven customer service search utility. Query airline flight listings, sort tickets by price, and verify real-time seating slots.
                 </p>
@@ -1582,7 +1582,7 @@ export function LandingPage() {
             <div style={{ background: "#FFFFFF", border: `1.5px solid ${C.border}`, borderRadius: 18, padding: "2rem", display: "flex", flexDirection: "column", gap: "1.2rem", boxShadow: "0 4px 20px rgba(0,0,0,0.02)" }}>
               <div style={{ fontSize: "2rem" }}>📞</div>
               <div>
-                <h3 style={{ fontSize: "1.2rem", fontWeight: 800, margin: "0 0 0.5rem 0", color: C.text1 }}>Talkinia Meetings Room</h3>
+                <h3 style={{ fontSize: "1.2rem", fontWeight: 800, margin: "0 0 0.5rem 0", color: C.text1 }}>Meetings Room</h3>
                 <p style={{ fontSize: "0.88rem", color: C.text2, lineHeight: 1.6, margin: 0 }}>
                   A collaborative stream room for remote discussions. Synchronizes multi-party meeting sessions with automatic speaker diarization and audio transcriptions.
                 </p>
@@ -2225,16 +2225,9 @@ function VoiceCalibration() {
             padding: "0.9rem 1rem", fontSize: "0.95rem", fontWeight: 500, lineHeight: 1.65,
             color: C.text1, marginBottom: "0.5rem"
           }}>
-            "I am securely enrolling my voice into the PILOT system.
-            This unique vocal signature will verify my identity."
-          </div>
-          <div style={{
-            background: "#F9F8F6", border: `1.5px solid ${C.border}`, borderRadius: 10,
-            padding: "0.9rem 1rem", fontSize: "0.95rem", fontWeight: 500, lineHeight: 1.65,
-            color: C.text1
-          }}>
-            "I authorize PILOT to act on my commands and confirm
-            that I am the registered user of this system."
+            {round === 1 && `"I am securely enrolling my voice into the PILOT system. This unique vocal signature will verify my identity."`}
+            {round === 2 && `"I authorize PILOT to act on my commands and confirm that I am the registered user of this system."`}
+            {round === 3 && `"PILOT will recognize my voice across different rooms, moods, and microphones from now on."`}
           </div>
         </div>
 
@@ -2260,7 +2253,7 @@ function VoiceCalibration() {
           </div>
           <div style={{ fontSize: "0.78rem", color: C.text3 }}>
             {rec.phase === "idle" ? `Tap mic to start Round ${round}` :
-              rec.phase === "recording" ? "Recording… read both passages above" :
+              rec.phase === "recording" ? "Recording… read the passage above" :
                 `Round ${round} captured ✓`}
           </div>
           {rec.err && <div style={{ color: C.red, fontSize: "0.78rem", marginTop: "0.25rem" }}>{rec.err}</div>}

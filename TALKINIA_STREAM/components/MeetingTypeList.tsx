@@ -161,6 +161,28 @@ const MeetingTypeList = () => {
     router.push(`/meeting/${link}`);
   };
 
+  // Auto-join once the link field looks like a real, complete meeting
+  // reference — no need to also click "Join Meeting". Debounced so it
+  // fires once typing/pasting settles, not on every keystroke; the length
+  // floor avoids triggering on a couple of stray characters before the
+  // user has actually finished. handleJoinMeeting's own parsing (URL /
+  // path segment / raw UUID) decides what counts as valid — this effect
+  // just decides WHEN to call it automatically.
+  const autoJoinTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (meetingState !== "isJoiningMeeting") return;
+    if (autoJoinTimer.current) clearTimeout(autoJoinTimer.current);
+    const link = values.link.trim();
+    if (link.length < 6) return;
+    autoJoinTimer.current = setTimeout(() => {
+      handleJoinMeeting();
+    }, 600);
+    return () => {
+      if (autoJoinTimer.current) clearTimeout(autoJoinTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [values.link, meetingState]);
+
   // Voice-command mic (LiveTranscriptBar) dispatches a plain window event
   // rather than calling these handlers directly — keeps the mic button
   // decoupled from this component's internal state/handlers. Declared after
@@ -301,6 +323,7 @@ const MeetingTypeList = () => {
       >
         <Input
           placeholder="Meeting link"
+          value={values.link}
           onChange={(e) => setValues({ ...values, link: e.target.value })}
           className="border-none bg-dark-3 focus-visible:ring-0 focus-visible:ring-offset-0"
         />

@@ -739,6 +739,43 @@ export function PPTCopilotView({ sessionId, isListening, agentStatus }:
   const [thumbStart, setThumbStart] = useState(0);
   const THUMB_COUNT = 6;
   const fileRef = useRef<HTMLInputElement>(null);
+  const slideAreaRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Keep isFullscreen in sync with the real browser state — not just our own
+  // toggle clicks, since the user can also exit via Esc or the browser's
+  // own fullscreen UI, which wouldn't otherwise update our button's icon/label.
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(document.fullscreenElement === slideAreaRef.current);
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      slideAreaRef.current?.requestFullscreen();
+    }
+  }, []);
+
+  // Arrow keys / space / Esc navigation while presenting — same as Google
+  // Slides. Esc itself is handled natively by the browser (exits
+  // fullscreen, which fires the fullscreenchange listener above).
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (["ArrowRight", "ArrowDown", " ", "PageDown"].includes(e.key)) {
+        e.preventDefault();
+        setCurrent(c => Math.min(c + 1, Math.max(slides.length - 1, 0)));
+      } else if (["ArrowLeft", "ArrowUp", "PageUp"].includes(e.key)) {
+        e.preventDefault();
+        setCurrent(c => Math.max(c - 1, 0));
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isFullscreen, slides.length]);
 
   // Keep thumbnail window centred on the active slide
   useEffect(() => {
@@ -1010,34 +1047,14 @@ export function PPTCopilotView({ sessionId, isListening, agentStatus }:
     setDeleteModal("hidden");
   }
 
-  // ── Voice input for description field ─────────────────────────────────────
-  const toggleMicInput = useCallback(() => {
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) { alert("Speech recognition not supported in this browser. Use Chrome."); return; }
-    if (micListening && recognitionRef.current) {
-      recognitionRef.current.stop();
-      setMicListening(false);
-      return;
-    }
-    const rec = new SR();
-    rec.lang = "en-US";
-    rec.continuous = false;
-    rec.interimResults = false;
-    rec.onresult = (e: any) => {
-      const heard = e.results[0][0].transcript;
-      setGenDesc(prev => prev ? prev + " " + heard : heard);
-      setMicListening(false);
-    };
-    rec.onerror = () => setMicListening(false);
-    rec.onend   = () => setMicListening(false);
-    recognitionRef.current = rec;
-    rec.start();
-    setMicListening(true);
-  }, [micListening]);
-
   // ── PPT generation ─────────────────────────────────────────────────────────
-  const generatePPT = useCallback(async () => {
-    if (!genDesc.trim()) return;
+  // Accepts an optional explicit description so the voice-input handler can
+  // trigger generation with the just-heard text immediately — reading
+  // `genDesc` from state right after setGenDesc(...) would still see the
+  // stale pre-update value, since React state updates aren't synchronous.
+  const generatePPT = useCallback(async (descOverride?: string) => {
+    const desc = (descOverride ?? genDesc).trim();
+    if (!desc) return;
     setGenerating(true);
     // setGenProgress(`Generating ${genCount} slides with AI…`);
     const sid = sessionId || getAnonPptSid();
@@ -1047,7 +1064,7 @@ export function PPTCopilotView({ sessionId, isListening, agentStatus }:
       const res = await fetch("/api/v1/ppt/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ session_id: sid, description: genDesc.trim(), slide_count: genCount }),
+        body: JSON.stringify({ session_id: sid, description: desc, slide_count: genCount }),
       }).then(r => { if (!r.ok) throw new Error(r.statusText); return r.json(); });
 
       const sl: Slide[] = res.slides || [];
@@ -1068,6 +1085,62 @@ export function PPTCopilotView({ sessionId, isListening, agentStatus }:
     setGenProgress("");
     setGenDesc("");
   }, [genDesc, genCount, sessionId, token]);
+
+  // ── Voice input for description field ─────────────────────────────────────
+  // continuous=true + our own 2s silence timer (reset on every new result)
+  // instead of continuous=false, which handed off end-of-speech detection
+  // entirely to the browser and cut the user off the instant it detected
+  // even a brief pause — no room to pause mid-thought and keep going.
+  const micSilenceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toggleMicInput = useCallback(() => {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) { alert("Speech recognition not supported in this browser. Use Chrome."); return; }
+    if (micListening && recognitionRef.current) {
+      if (micSilenceTimer.current) { clearTimeout(micSilenceTimer.current); micSilenceTimer.current = null; }
+      recognitionRef.current.stop();
+      setMicListening(false);
+      return;
+    }
+    const rec = new SR();
+    rec.lang = "en-US";
+    rec.continuous = true;
+    rec.interimResults = true;
+
+    let finalText = genDesc;
+
+    rec.onresult = (e: any) => {
+      // Speech is still coming in — cancel any pending "user has gone
+      // quiet" timer from a previous result.
+      if (micSilenceTimer.current) clearTimeout(micSilenceTimer.current);
+
+      let interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const transcript = e.results[i][0].transcript;
+        if (e.results[i].isFinal) {
+          finalText = finalText ? finalText + " " + transcript : transcript;
+        } else {
+          interim += transcript;
+        }
+      }
+      setGenDesc(interim ? (finalText ? finalText + " " + interim : interim) : finalText);
+
+      // Give the user 2 extra seconds to keep talking before treating this
+      // as done — only actually stops listening (and triggers generation)
+      // once 2s pass with no further speech.
+      micSilenceTimer.current = setTimeout(() => rec.stop(), 2000);
+    };
+    rec.onerror = () => setMicListening(false);
+    rec.onend = () => {
+      setMicListening(false);
+      if (micSilenceTimer.current) { clearTimeout(micSilenceTimer.current); micSilenceTimer.current = null; }
+      const desc = finalText.trim();
+      setGenDesc(desc);
+      if (desc) generatePPT(desc);
+    };
+    recognitionRef.current = rec;
+    rec.start();
+    setMicListening(true);
+  }, [micListening, genDesc, generatePPT]);
 
   // ── Add slide to the loaded presentation ────────────────────────────────
   const addSlide = useCallback(async () => {
@@ -1196,6 +1269,19 @@ export function PPTCopilotView({ sessionId, isListening, agentStatus }:
           )}
         </div>
 
+        {/* Present / Slideshow — Google Slides-style: fullscreen the slide
+            canvas only, which natively hides the sidebar/toolbar/thumbnail
+            strip since they're outside the fullscreened element. */}
+        {slides.length > 0 && (
+          <button onClick={toggleFullscreen}
+            style={{ padding:"0.45rem 1rem", borderRadius:8,
+                     background:C.amberDark, border:"none",
+                     color:"#fff", fontWeight:600, fontSize:"0.8rem", cursor:"pointer",
+                     display:"flex", alignItems:"center", gap:"0.4rem" }}>
+            <PresentationIcon size={14} color="#fff"/> Present
+          </button>
+        )}
+
         {/* Export PDF / Download PPTX buttons — visible whenever slides are loaded */}
         {slides.length > 0 && (() => {
           const sid = generatedSid || sessionId || getAnonPptSid();
@@ -1255,9 +1341,19 @@ export function PPTCopilotView({ sessionId, isListening, agentStatus }:
         {/* Main slide area */}
         <div style={{ flex:1, display:"flex", flexDirection:"column", minHeight:0 }}>
           {/* Slide canvas */}
-          <div style={{ flex:1, background:C.bg, display:"flex",
+          <div ref={slideAreaRef} style={{ flex:1, background: isFullscreen ? "#000" : C.bg, display:"flex",
                         alignItems:"center", justifyContent:"center",
                         position:"relative", overflow:"hidden", minHeight:0 }}>
+            {isFullscreen && (
+              <button onClick={toggleFullscreen} title="Exit slideshow (Esc)"
+                style={{ position:"absolute", top:14, right:14, zIndex:20,
+                         width:34, height:34, borderRadius:8,
+                         background:"rgba(255,255,255,0.12)", border:"none",
+                         display:"flex", alignItems:"center", justifyContent:"center",
+                         cursor:"pointer" }}>
+                <XIcon size={16} color="#fff"/>
+              </button>
+            )}
             {slides.length === 0 ? (
               /* Drop zone */
               <div onDragOver={e=>e.preventDefault()}
@@ -1276,8 +1372,17 @@ export function PPTCopilotView({ sessionId, isListening, agentStatus }:
                 </p>
               </div>
             ) : (
-              /* Slide canvas — shows converted PNG image (exact copy of original) */
-              <div style={{ width:"90%", maxWidth:720, aspectRatio:"16/9",
+              /* Slide canvas — shows converted PNG image (exact copy of original).
+                 In present mode, fills the fullscreened viewport edge-to-edge
+                 (width/height 100%) instead of the small maxWidth:720 editing
+                 preview box — aspectRatio still keeps it a true 16:9 rectangle,
+                 letterboxed within the screen rather than stretched/distorted. */
+              <div style={ isFullscreen ? {
+                            width:"100%", height:"100%", maxWidth:"100vw", maxHeight:"100vh",
+                            aspectRatio:"16/9", margin:"auto",
+                            background:"#000", borderRadius:0, border:"none", boxShadow:"none",
+                            position:"relative", overflow:"hidden", flexShrink:0,
+                          } : { width:"90%", maxWidth:720, aspectRatio:"16/9",
                             background:C.surface, borderRadius:6,
                             border:`1.5px solid ${C.border}`,
                             boxShadow:"0 8px 36px rgba(0,0,0,0.14)",
@@ -1830,7 +1935,7 @@ export function PPTCopilotView({ sessionId, isListening, agentStatus }:
                          opacity: generating ? 0.5 : 1 }}>
                 Cancel
               </button>
-              <button onClick={generatePPT}
+              <button onClick={() => generatePPT()}
                 disabled={generating || !genDesc.trim()}
                 style={{ flex:2, padding:"0.6rem", borderRadius:8, border:"none",
                          background: generating || !genDesc.trim()

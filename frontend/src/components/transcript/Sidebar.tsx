@@ -31,7 +31,7 @@ export function Sidebar({ active }: SidebarProps) {
         {[
           { id: "dashboard", icon: "⊞", label: "Main Dashboard" },
           { id: "ppt", icon: "🖥", label: "PPT Copilot" },
-          { id: "care", icon: "🗺️", label: "Trip Planner" },
+          { id: "care", icon: "🗺️", label: "Travel Planner" },
           { id: "meetings", icon: "👥", label: "MeetRoom" },
           // Customer Resolution, Email Center, and Wanna Chat are disabled from UI navigation.
           // { id: "resolution", icon: "🧭", label: "Customer Resolution" },

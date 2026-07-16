@@ -13,7 +13,7 @@ export default defineConfig({
         configure: (proxy) => {
           proxy.on("error", (err) => console.error("proxy error", err));
           proxy.on("proxyReq", (proxyReq, req) => {
-            console.log("→ proxy:", req.method, req.url);
+            // console.log("→ proxy:", req.method, req.url);
           });
         },
       },

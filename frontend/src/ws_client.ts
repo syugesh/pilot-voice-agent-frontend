@@ -49,13 +49,13 @@ export class PilotWSClient {
     );
     //Runs when connection succeeds.
     this.eventsWs.onopen = () => {
-      console.log(`[PILOT] events WS open — session ${this.sessionId.slice(0, 8)}`);
+      // console.log(`[PILOT] events WS open — session ${this.sessionId.slice(0, 8)}`);
       
       // Flush any queued payloads first
       while (this.payloadQueue.length > 0) {
         const payload = this.payloadQueue.shift();
         if (payload && this.eventsWs?.readyState === WebSocket.OPEN) {
-          console.log("[PILOT] Flushed queued payload:", payload);
+          // console.log("[PILOT] Flushed queued payload:", payload);
           this.eventsWs.send(JSON.stringify(payload));
         }
       }
@@ -69,7 +69,7 @@ export class PilotWSClient {
         const msg: WSEvent = JSON.parse(e.data);
         //just to keep the connection alive.
         if (msg.type !== "ping") {
-          console.log(`[PILOT] WS event: ${msg.type}`, msg.payload);
+          // console.log(`[PILOT] WS event: ${msg.type}`, msg.payload);
           //handlers = {
           //transcript: updateTranscript,
           //tool_result: showToolOutput
@@ -115,7 +115,7 @@ export class PilotWSClient {
       } catch { /* ignore parse errors */ }
     };
     this.eventsWs.onclose = () => {
-      console.log(`[PILOT] events WS closed — session ${this.sessionId.slice(0, 8)}`);
+      // console.log(`[PILOT] events WS closed — session ${this.sessionId.slice(0, 8)}`);
       // Network drop
       //     ↓
       // Socket closes
@@ -154,7 +154,7 @@ export class PilotWSClient {
     if (this.eventsWs?.readyState === WebSocket.OPEN) {
       this.eventsWs.send(JSON.stringify(payload));
     } else {
-      console.log("[PILOT] WS not open, queueing payload:", payload);
+      // console.log("[PILOT] WS not open, queueing payload:", payload);
       this.payloadQueue.push(payload);
     }
   }

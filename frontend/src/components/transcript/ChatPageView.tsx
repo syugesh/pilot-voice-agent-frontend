@@ -345,7 +345,7 @@ export function ChatPageView() {
     sharedVoiceService.ensureConnected();
 
     const unbind = sharedVoiceService.registerChat((msg: any) => {
-      console.log("[ChatPageView] Received WS chat message:", msg);
+      // console.log("[ChatPageView] Received WS chat message:", msg);
 
       const isSender = String(msg.sender_id) === String(store.user?.id);
 
@@ -405,7 +405,7 @@ export function ChatPageView() {
   // Listen to real-time profile updates and sync names/emails instantly
   useEffect(() => {
     const unbind = sharedVoiceService.registerProfile((data: any) => {
-      console.log("[ChatPageView] Received WS profile update:", data);
+      // console.log("[ChatPageView] Received WS profile update:", data);
       const updatedUserId = String(data.user_id);
 
       setSessions(prev => prev.map(s => {

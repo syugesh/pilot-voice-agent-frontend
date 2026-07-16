@@ -226,7 +226,7 @@ class SharedVoiceService {
     this.wsClient = new PilotWSClient(chatSessionId, token, {
       onOpen: () => this.setStatus("Connected"),
       barge_in: () => {
-        console.log("[PILOT] Barge-in event received. Stopping audio playback.");
+        // console.log("[PILOT] Barge-in event received. Stopping audio playback.");
         this.stopAudio();
       },
       transcript: (p: any) => {
@@ -313,7 +313,7 @@ class SharedVoiceService {
           this.setStatus("Listening...");
           // Instantly synchronize any manually filled inputs to the backend session right after connection opens
           const currentPage = useAppStore.getState().page;
-          console.log("[PILOT_DEBUG] onOpen fired, currentPage =", currentPage);
+          // console.log("[PILOT_DEBUG] onOpen fired, currentPage =", currentPage);
           if (currentPage === "email") {
             this.sendPayload({
               type: "typed_email_context",
@@ -324,7 +324,7 @@ class SharedVoiceService {
             const origin = useAppStore.getState().typedFlightOrigin || "";
             const destination = useAppStore.getState().typedFlightDestination || "";
             const date = useAppStore.getState().typedFlightDate || "";
-            console.log("[PILOT_DEBUG] Sending typed_flight_context:", { origin, destination, date });
+            // console.log("[PILOT_DEBUG] Sending typed_flight_context:", { origin, destination, date });
             this.sendPayload({
               type: "typed_flight_context",
               origin,
@@ -334,7 +334,7 @@ class SharedVoiceService {
           }
         },
         barge_in: () => {
-          console.log("[PILOT] Barge-in event received. Stopping audio playback.");
+          // console.log("[PILOT] Barge-in event received. Stopping audio playback.");
           this.stopAudio();
         },
         transcript: (p: any) => {

@@ -12,6 +12,7 @@ import {
   isFlightRelated
 } from "./helpers";
 import { WaveBars, LiveTranscriptBar } from "./LiveTranscriptBar";
+import { MicIcon, StopIcon } from "../Icons";
 
 // Helper: generate a short unique job id for trip planner tasks
 const makeTripJobId = (prefix: string) =>
@@ -180,6 +181,24 @@ export function CustomerCareView() {
     return m ? parseFloat(m[1]) : null;
   };
 
+  // Real, free, keyless IP-based geolocation (city-level accuracy only) —
+  // used strictly as a fallback when the browser's precise Geolocation API
+  // fails for a HARDWARE/SIGNAL reason (macOS CoreLocation's
+  // kCLErrorLocationUnknown — weak Wi-Fi/GPS signal, still warming up),
+  // never when the user explicitly denied permission. Real service, real
+  // response — never a guessed/default city.
+  const _fetchIpLocation = async (): Promise<{ lat: number; lng: number; city: string } | null> => {
+    try {
+      const res = await fetch("https://ipapi.co/json/");
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (typeof data.latitude !== "number" || typeof data.longitude !== "number") return null;
+      return { lat: data.latitude, lng: data.longitude, city: data.city || "your area" };
+    } catch {
+      return null;
+    }
+  };
+
   const useMyLocation = () => {
     setLocError("");
     if (!navigator.geolocation) {
@@ -193,10 +212,25 @@ export function CustomerCareView() {
         setHotelLoc("My current location");
         setLocating(false);
       },
-      () => {
-        // Denied or unavailable — fall back to asking the user to type a
-        // city, same as any other missing-parameter case (no default city).
-        setLocError("Couldn't access your location — please type a city instead.");
+      async (err) => {
+        // PERMISSION_DENIED (code 1) is an explicit privacy choice — respect
+        // it, no automatic fallback. POSITION_UNAVAILABLE (code 2 — macOS's
+        // kCLErrorLocationUnknown: weak Wi-Fi/GPS signal) and TIMEOUT (code
+        // 3) are hardware/signal failures, not a refusal — worth trying a
+        // coarser, real IP-based location instead of just giving up.
+        if (err.code === err.PERMISSION_DENIED) {
+          setLocError("Location access was denied — please type a city instead.");
+          setLocating(false);
+          return;
+        }
+        const ipLoc = await _fetchIpLocation();
+        if (ipLoc) {
+          setHotelCoords({ lat: ipLoc.lat, lng: ipLoc.lng });
+          setHotelLoc(`Near ${ipLoc.city} (approximate — IP-based)`);
+          setLocError("Precise location was unavailable (weak Wi-Fi/GPS signal) — using an approximate IP-based location instead.");
+        } else {
+          setLocError("Couldn't access your location — please type a city instead.");
+        }
         setLocating(false);
       },
       { timeout: 8000 }
@@ -215,6 +249,45 @@ export function CustomerCareView() {
   const [mapDest, setMapDest] = useState("Delhi");
   const [mapIframeUrl, setMapIframeUrl] = useState("https://maps.google.com/maps?saddr=Mumbai&daddr=Delhi&dirflg=w&output=embed");
   const [mapLoading, setMapLoading] = useState(false);
+
+  // Voice input for the pedestrian-map source/destination fields — browser
+  // Web Speech API, same pattern as PPTView's topic mic input. Voice only
+  // ever FILLS the form fields; it doesn't bypass them or auto-render, so
+  // the user still reviews/edits before clicking "Render Walking Route".
+  const [mapMicListening, setMapMicListening] = useState(false);
+  const mapMicRef = useRef<any>(null);
+  const toggleMapMic = () => {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) { alert("Speech recognition not supported in this browser. Use Chrome."); return; }
+    if (mapMicListening && mapMicRef.current) {
+      mapMicRef.current.stop();
+      setMapMicListening(false);
+      return;
+    }
+    const rec = new SR();
+    rec.lang = "en-US";
+    rec.continuous = false;
+    rec.interimResults = false;
+    rec.onresult = (e: any) => {
+      const heard: string = e.results[0][0].transcript || "";
+      // "from X to Y" / "walk from X to Y" — fills both fields at once.
+      const both = heard.match(/\bfrom\s+(.+?)\s+to\s+(.+)/i);
+      if (both) {
+        setMapSource(both[1].trim());
+        setMapDest(both[2].trim());
+      } else {
+        // Just a single place name — fills whichever field is currently
+        // empty, destination first (source already defaults to something).
+        setMapDest(heard.trim());
+      }
+      setMapMicListening(false);
+    };
+    rec.onerror = () => setMapMicListening(false);
+    rec.onend = () => setMapMicListening(false);
+    mapMicRef.current = rec;
+    rec.start();
+    setMapMicListening(true);
+  };
 
   // Helper to determine the service type of a transcript based on tool call results or text keywords
   const getServiceTypeForTranscript = (t: any): "flights" | "hotels" | "trains" | null => {
@@ -468,6 +541,11 @@ export function CustomerCareView() {
           setLiveFlights(results);
         } else if (type === "hotels") {
           setLiveHotels(results);
+          // New result set has its own price/rating range — stale filter
+          // state from a previous search would otherwise silently pass
+          // everything through (or hide everything) against the old bounds.
+          setHotelMaxPrice(null);
+          setHotelStarFilter({ 1: true, 2: true, 3: true, 4: true, 5: true });
         } else if (type === "trains") {
           setLiveTrains(results);
         }
@@ -1114,7 +1192,7 @@ export function CustomerCareView() {
               return (
                 <div key={idx} style={{
                   background: "#FFFFFF",
-                  border: `1.5px solid ${idx === 0 ? C.amber : C.border}`,
+                  border: `1.5px solid ${idx === 0 && hotelSort === "best" ? C.amber : C.border}`,
                   borderRadius: 14,
                   padding: "1.1rem",
                   boxShadow: "0 4px 16px rgba(0,0,0,0.02)",
@@ -1124,6 +1202,17 @@ export function CustomerCareView() {
                   position: "relative",
                   width: "100%"
                 }}>
+                  {idx === 0 && hotelSort === "best" && (
+                    <div style={{
+                      position: "absolute", top: -9, right: 14,
+                      background: C.amber, color: "#fff",
+                      fontSize: "0.6rem", fontWeight: 800,
+                      padding: "2px 8px", borderRadius: 20,
+                      boxShadow: "0 2px 6px rgba(0,0,0,0.12)",
+                    }}>
+                      BEST OPTION
+                    </div>
+                  )}
                   {/* Top header row */}
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px dashed ${C.border}`, paddingBottom: "0.5rem" }}>
                     <span style={{ fontSize: "0.82rem", fontWeight: 800, color: C.amberDark }}>
@@ -1136,10 +1225,13 @@ export function CustomerCareView() {
                         </span>
                         {/* We only ever have a per-room/night rate from the source listing —
                             never a real per-person breakdown, so we label it honestly instead
-                            of inventing a "for 1 person" split that isn't in the data. */}
+                            of inventing a "for 1 person" split that isn't in the data. "1 guest"
+                            here reflects the actual search occupancy (adults defaults to 1
+                            server-side, and there's no guest-count selector in this UI yet) —
+                            not a claim that the source itself itemized a per-guest rate. */}
                         {h.price && (
                           <div style={{ fontSize: "0.6rem", color: C.text3, fontWeight: 500 }}>
-                            total for room/night
+                            total for room/night · 1 guest
                           </div>
                         )}
                       </div>
@@ -1510,7 +1602,9 @@ export function CustomerCareView() {
                                           border: `1px solid ${C.border}`,
                                           display: "flex",
                                           flexDirection: "column",
-                                          gap: "0.3rem"
+                                          gap: "0.3rem",
+                                          maxHeight: 220,
+                                          overflowY: "auto",
                                         }}>
                                           {isLoading ? (
                                             <span style={{ fontSize: "0.68rem", color: C.text3 }}>Looking up the full route…</span>
@@ -1761,7 +1855,7 @@ export function CustomerCareView() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
             <h2 style={{ fontWeight: 800, fontSize: "1.1rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-              <span>🗺️</span> PILOT Travel OS: Trip Planner
+              <span>🗺️</span> PILOT Travel OS: Travel Planner
             </h2>
             {/* <p style={{ fontSize: "0.75rem", color: C.text3 }}>Unified flight, hotel, train and navigation workstation.</p> */}
           </div>
@@ -1794,7 +1888,7 @@ export function CustomerCareView() {
           { id: "flights", label: "🛫 Flights" },
           { id: "hotels", label: "🏨 Hotels" },
           { id: "trains", label: "🚆 Trains" },
-          { id: "map", label: "🚶 Pedestrian Map" }
+          // { id: "map", label: "🚶 Pedestrian Map" }
         ].map(t => (
           <button key={t.id} onClick={() => setActiveTab(t.id as any)}
             style={{
@@ -2023,7 +2117,15 @@ export function CustomerCareView() {
           {/* TAB 4: Route Map Sidebar */}
           {activeTab === "map" && (
             <>
-              <div style={{ fontSize: "0.68rem", fontWeight: 700, letterSpacing: "0.08em", color: C.text3 }}>PEDESTRIAN MAP DIRECTIONS</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ fontSize: "0.68rem", fontWeight: 700, letterSpacing: "0.08em", color: C.text3 }}>PEDESTRIAN MAP DIRECTIONS</div>
+                <button onClick={toggleMapMic} title={mapMicListening ? "Stop listening" : 'Speak "from X to Y"'}
+                  style={{ width: 22, height: 22, borderRadius: 6, border: "none", cursor: "pointer",
+                           background: mapMicListening ? C.amber : "var(--amber-bg)",
+                           display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  {mapMicListening ? <StopIcon size={11} color="#fff"/> : <MicIcon size={12} color={C.amberDark}/>}
+                </button>
+              </div>
               <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", background: "#fff", borderRadius: 8, border: `1.5px solid ${C.border}`, padding: "0.3rem 0.5rem" }}>
                 <span>🟢</span>
                 <input value={mapSource} onChange={e => setMapSource(e.target.value)} placeholder="Starting point (Source)"
