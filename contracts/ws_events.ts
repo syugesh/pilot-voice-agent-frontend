@@ -6,6 +6,7 @@ on the client side events.
 
 // union of all recognized event string.
 export type WSEventType =
+  | "wake_word" 
   | "transcript" // run live transcribed audio text.
   | "tool_start"
   | "tool_end"
